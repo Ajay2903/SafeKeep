@@ -360,12 +360,32 @@ survives as `deleteVault()`.
   you.
 - **App icons** — `very_good_cli` generated placeholder icons per flavor;
   swap them for real artwork whenever the app's visual identity is ready.
-- **On-device crypto verification (Phase 1)** — unit tests cover
-  everything except the two platform wrappers. On a real device, confirm:
-  a vault survives an app restart; biometric unlock works and cancelling
-  it leaves the vault locked; the vault key survives an OS update; and
-  measure real Argon2id derivation time on the lowest-end device you
-  intend to support (target well under 5 s to avoid an Android ANR).
+- **On-device crypto benchmark (Phase 1)** — run
+  `integration_test/crypto_benchmark_test.dart` on the lowest-end device
+  you intend to support:
+
+  ```sh
+  flutter devices                        # find the device id
+  flutter test integration_test/crypto_benchmark_test.dart \
+    --flavor development -d <device-id> --profile
+  ```
+
+  Use `--profile`; debug mode is materially slower and will make the
+  numbers look worse than a real build. It prints Argon2id timings for
+  the production 64 MiB profile alongside 32 MiB and the OWASP floor so
+  they can be compared on the same hardware, prints AES-GCM throughput at
+  1/5/10 MB, re-checks the RFC 9106 vector on-device, and fails outright
+  if derivation crosses the 5 s Android ANR threshold. Guidance for
+  reading the result is in the file's doc comment.
+
+  Tune `KdfParameters.current` **before** real vaults exist: each vault
+  keeps deriving with the parameters it was created under, so a later
+  change only affects new vaults.
+
+- **Other on-device checks (Phase 1)** — unit tests cover everything
+  except the two platform wrappers. On a real device, confirm: a vault
+  survives an app restart; biometric unlock works and cancelling it
+  leaves the vault locked; and the vault key survives an OS update.
 - **Android backup exclusion** — confirm the app is excluded from Android
   auto-backup, or that Keystore-held material is not captured by it, so
   vault key material cannot leave the device via a Google account backup.
