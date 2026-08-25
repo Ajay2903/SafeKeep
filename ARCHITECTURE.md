@@ -1,9 +1,15 @@
-# Safekeep — Architecture (Phase 0)
+# Safekeep — Architecture
 
-Safekeep is a privacy-first, offline document vault. This note documents
-the foundational setup done before any feature work: flavors, layered
-structure, dependencies, theming, logging, and config. Nothing described
-below is a feature — screens, models, and real crypto are later phases.
+Safekeep is a privacy-first, offline document vault.
+
+* **Phase 0** — foundations: flavors, layered structure, dependencies,
+  theming, logging, config.
+* **Phase 1** — the encryption layer: Argon2id key derivation,
+  AES-256-GCM document encryption, and the vault key lifecycle. See
+  [Phase 1 — encryption layer](#phase-1--encryption-layer).
+
+No UI feature work has been done yet; screens and data models are later
+phases.
 
 ## Flavors
 
@@ -65,9 +71,10 @@ without touching this directory), and **auditability** (anyone assessing
 the app's security posture has exactly one directory to read). See
 `lib/security/README.md` for details.
 
-**Status:** interfaces only, no implementation. Each carries a
-`// TODO(phase1)` marker. Do not instantiate a concrete implementation of
-any of them outside tests until that phase.
+**Status (Phase 1): implemented.** Argon2id key derivation, AES-256-GCM
+encryption, the vault key lifecycle, and the biometric gate are all real
+code with 92 tests. See the "Phase 1 — encryption layer" section below and
+`lib/security/README.md` for the design.
 
 ### `data/`, `domain/`, `presentation/`
 
@@ -190,6 +197,154 @@ directly to `AppConfig` rather than branching on `Flavor` in feature code.
 
   To opt back out: `git config --unset core.hooksPath`.
 
+## Phase 1 — encryption layer
+
+Implemented in `lib/security/`. Design rationale for every parameter lives
+next to the code; this is the summary.
+
+### Key derivation: Argon2id
+
+Chosen over PBKDF2-HMAC-SHA256. PBKDF2 parallelises on GPUs and ASICs at
+near-zero marginal cost per guess; Argon2id is memory-hard, forcing an
+attacker to allocate 64 MiB per concurrent guess. That matters
+disproportionately here: SafeKeep is zero-knowledge with no server, so
+nothing rate-limits anything. An attacker holding blobs from the user's
+own cloud backup cracks offline, unlimited and in parallel. The KDF cost
+is the only barrier.
+
+The pure-Dart implementation in `package:cryptography` is verified against
+the **official RFC 9106 section 5.3 test vector** by a permanent test.
+That test is what justifies trusting it at all.
+
+| Parameter | Value | Why |
+|---|---|---|
+| memory | 65 536 KiB (64 MiB) | Dominant security factor. ~3.4x OWASP's 19 MiB floor. Measured ~295 ms AOT desktop → est. 1-3 s low-end phone. 128 MiB measured ~604 ms and was rejected for OOM risk. |
+| iterations | 3 | OWASP floor is 2; passes are the cheap knob once memory is set. |
+| parallelism | 1 | Argon2's `p` models *attacker* parallelism, so raising it does not help the defender. OWASP recommends 1. |
+| key length | 32 bytes | 256 bits, matching AES-256. |
+| salt | 16 bytes, `Random.secure` | RFC 9106 recommendation. Not secret; stored with the vault. Makes rainbow tables useless and stops two users with the same passphrase sharing a key. |
+
+**Cost factors are persisted per vault, not hardcoded.** Argon2id is only
+deterministic for fixed parameters, so if a future release raised them and
+derivation always used today's values, every existing vault would derive a
+different key and its documents would be permanently unreadable.
+
+### Two keys, via HKDF domain separation
+
+```text
+masterKey     = Argon2id(passphrase, salt, params)      # never stored
+encryptionKey = HKDF-SHA256(masterKey, "safekeep:v1:encryption")
+verifier      = HKDF-SHA256(masterKey, "safekeep:v1:verification")
+```
+
+Only the verifier is persisted, so domain separation matters: reading it
+reveals nothing about the encryption key. Storing the raw master key as
+its own verifier would have handed the key over outright. The verifier
+still lets an offline attacker *test* guesses — unavoidable for any
+offline vault, and precisely what the Argon2id cost defends.
+
+Verifier comparison is constant-time. A short-circuiting compare would
+leak, through timing, how many leading bytes matched, letting an attacker
+recover it byte-by-byte instead of guessing it whole.
+
+### Encryption: AES-256-GCM
+
+An AEAD mode, so decryption *detects* modification instead of returning
+attacker-controlled plaintext. Concretely relevant because blobs are
+destined for the user's own cloud storage, where anyone who compromises
+that account can modify them. CBC or CTR would decrypt tampered data
+silently.
+
+A fresh 96-bit nonce comes from `Random.secure` on every call — never a
+counter, since a persisted counter cannot survive reinstalls, crashes, or
+device restores, and a repeated GCM nonce under one key leaks the
+plaintext XOR and enables forgery.
+
+### Stored blob format
+
+```text
+Offset  Length  Field
+     0       1  format version (0x01)
+     1      12  nonce  (96-bit, fresh per encryption)
+    13      16  GCM authentication tag (128-bit)
+    29       N  ciphertext (N == plaintext length)
+```
+
+Total `29 + N` bytes. 96-bit nonce because GCM consumes that length
+directly rather than compressing it through GHASH; full 128-bit tag
+because truncation only weakens forgery resistance; version byte so a
+future format change is never ambiguous. Random-nonce collisions stay
+negligible below ~2^32 encryptions per key, far beyond a personal vault.
+
+### Key lifecycle, end to end
+
+1. **Setup** — user picks a passphrase. A random salt is generated,
+   Argon2id derives the master key, HKDF splits it. Salt, KDF parameters,
+   verifier, and encryption key go to Keystore/Keychain. The vault is left
+   unlocked. The passphrase is never stored.
+2. **Use** — `EncryptionService` asks `KeyManager` for the session key via
+   `EncryptionKeySource` and encrypts/decrypts documents.
+3. **Lock** — explicit, or `AutoLockController` after 30 s in the
+   background. The key buffer is zeroed and dropped; `encryptionKeyFor`
+   then throws `VaultLockedException`.
+4. **Unlock** — either the passphrase (re-derived and verified against the
+   verifier) or biometrics/device credential. The gate must succeed
+   *before* the key is read out of secure storage.
+5. **Delete** — `deleteVault()` removes key, salt, verifier, and
+   parameters. A cryptographic erase: every document becomes unrecoverable
+   whether or not the ciphertext still exists.
+
+Auto-lock uses a 30-second grace period rather than locking immediately,
+because file pickers, camera intents, and share sheets all background the
+app during normal use; locking on each would train users to disable it.
+`AutoLockController` does not observe `WidgetsBinding` itself — the UI
+layer will call `onBackgrounded`/`onForegrounded`, keeping
+`lib/security/` free of Flutter UI dependencies and the timing
+deterministically testable.
+
+### Deviation from the Phase 0 stubs
+
+`EncryptionService` and `BiometricGate` were implemented **unchanged**.
+
+`KeyManager` was redesigned. Its Phase 0 contract was
+`getOrCreateKey(keyId)`, documented as generating a random key on first
+use — incompatible with a passphrase-derived zero-knowledge vault: a
+random key is not reproducible from the passphrase, so neither "forget it
+and the data is gone" nor cross-device restore would hold, and there was
+nowhere to express the passphrase, the biometric gate, or the
+locked/unlocked state. Silently creating a key on first call would also
+mask "no vault exists" as success. `deleteKey`'s crypto-erase intent
+survives as `deleteVault()`.
+
+### Known gaps and review notes
+
+* **Dart cannot guarantee erasure of secrets from memory.** Key buffers
+  are zeroed on lock, which is real and worth doing, but the GC may have
+  copied them already. Passphrases arrive as `String`, which is immutable
+  and cannot be wiped at all. This is a language-level limitation.
+* **The encryption key is stored at rest** (deliberately, to enable
+  biometric unlock). After setup, the passphrase is no longer the only
+  thing protecting data *on that device* — hardware-backed storage plus
+  the biometric gate are. Blobs backed up elsewhere remain
+  passphrase-protected.
+* **Cross-device restore is partial.** A restored device can unlock and
+  decrypt with the passphrase, but the re-derived key is session-only, so
+  biometric unlock will not work there until the vault is explicitly
+  adopted on that device. Marked `TODO(phase-backup)`.
+* **AES-GCM is pure Dart** (~20 MB/s AOT desktop), so a 10 MB document
+  takes a second or two on a phone and blocks the calling isolate.
+  `package:cryptography_flutter` swaps in native AES-GCM (~10x) with **no
+  change to the blob format**, so it is a drop-in with no data migration.
+  Marked `TODO(phase2)`.
+* **The platform wrappers are untested by CI.**
+  `FlutterSecureStorageStore` and `LocalAuthBiometricGate` need platform
+  channels. Both are deliberately thin, but they need on-device
+  verification (see checklist).
+* **Worth an expert review before Phase 2 builds on this:** the HKDF
+  domain-separation scheme, the decision to persist the derived key, and
+  the Argon2id cost factors against the low-end-device population you
+  actually intend to support.
+
 ## Manual follow-ups (not automatable from here)
 
 - **iOS code signing** — set your Team ID / provisioning in Xcode for
@@ -205,6 +360,15 @@ directly to `AppConfig` rather than branching on `Flavor` in feature code.
   you.
 - **App icons** — `very_good_cli` generated placeholder icons per flavor;
   swap them for real artwork whenever the app's visual identity is ready.
+- **On-device crypto verification (Phase 1)** — unit tests cover
+  everything except the two platform wrappers. On a real device, confirm:
+  a vault survives an app restart; biometric unlock works and cancelling
+  it leaves the vault locked; the vault key survives an OS update; and
+  measure real Argon2id derivation time on the lowest-end device you
+  intend to support (target well under 5 s to avoid an Android ANR).
+- **Android backup exclusion** — confirm the app is excluded from Android
+  auto-backup, or that Keystore-held material is not captured by it, so
+  vault key material cannot leave the device via a Google account backup.
 - **Local toolchain:** if `flutter build apk` fails with a Kotlin/Gradle/
   Java version-mismatch error, see the note in the Phase 0 handoff summary
   about the Gradle wrapper and Kotlin version bumps made to unblock this

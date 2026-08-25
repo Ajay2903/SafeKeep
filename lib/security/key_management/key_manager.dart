@@ -64,6 +64,18 @@ abstract interface class KeyManager implements EncryptionKeySource {
   /// Verifies [passphrase] and, if correct, loads the key for this
   /// session. Returns `false` on a wrong passphrase, leaving the vault
   /// locked.
+  ///
+  /// Works even when only the salt, KDF parameters, and verifier are
+  /// present — the key is re-derived rather than read from storage — which
+  /// is what makes restoring a backup onto a new device possible.
+  ///
+  /// Known gap: on such a device the derived key is held for the session
+  /// only and is not written to secure storage, so
+  /// [unlockWithBiometrics] will not work there until the vault is
+  /// explicitly adopted on that device.
+  // TODO(phase-backup): add adoptOnThisDevice() to persist the re-derived
+  // key after a restore, so biometric unlock works on the new device.
+  // Belongs with the backup/restore phase, not the core crypto layer.
   Future<bool> unlockWithPassphrase(String passphrase);
 
   /// Unlocks using biometrics or the device credential.
