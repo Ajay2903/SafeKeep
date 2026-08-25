@@ -36,12 +36,30 @@ import 'package:safekeep/security/key_management/key_derivation.dart';
 /// multi-second unlock is still bad, and 5 s is the hard ceiling this test
 /// asserts against.
 ///
+/// # What this cost actually buys, and who pays it
+///
+/// Read the number against how often it is paid, not as if it were the
+/// everyday unlock. Only `setUpVault`, `unlockWithPassphrase`, and
+/// `verifyPassphrase` run Argon2id. `unlockWithBiometrics` reads the key
+/// straight from Keystore/Keychain and derives nothing — measured as
+/// effectively instant on a Galaxy A21s. So this figure is paid once at
+/// onboarding (behind a progress indicator) and afterwards only when
+/// biometrics are unavailable, fail, or the vault opens on a new device.
+///
 /// Guidance for the production 48 MiB profile:
 ///
-/// * **under 1.5 s** — comfortable, keep the current parameters.
-/// * **1.5-3 s** — acceptable for a vault unlock; check how it feels.
-/// * **over 3 s** — consider dropping to 32 MiB. The table shows what
-///   that would buy you on this specific device.
+/// * **under 2 s** — comfortable. There may even be headroom to raise
+///   memory, which buys real resistance to offline cracking.
+/// * **2-4 s** — appropriate. This is a setup and fallback cost, not an
+///   everyday one; a few seconds once at onboarding is a fair price for
+///   the memory hardness.
+/// * **4-5 s** — close to the ceiling. Consider lowering memory, and
+///   remember slower devices than this one exist.
+/// * **over 5 s** — fails outright, see below.
+///
+/// Reference point: 48 MiB / t=2 measures ~3 s on a Galaxy A21s
+/// (Exynos 850, 2020 budget hardware) in profile mode — deliberately a
+/// floor-of-the-market device, so most users will see less.
 ///
 /// Tuning is cheap **now** and effectively permanent once real vaults
 /// exist: each vault keeps deriving with the parameters it was created
@@ -120,15 +138,22 @@ void main() {
       });
 
       final productionTime = production!;
+      final millis = productionTime.inMilliseconds;
       debugPrint('');
-      if (productionTime.inMilliseconds < 1500) {
-        debugPrint('VERDICT: comfortable. Keep the current parameters.');
-      } else if (productionTime.inMilliseconds < 3000) {
-        debugPrint('VERDICT: acceptable, but check how the unlock feels.');
+      if (millis < 2000) {
+        debugPrint(
+          'VERDICT: comfortable. Possibly headroom to RAISE memory, '
+          'which buys real resistance to offline cracking.',
+        );
+      } else if (millis < 4000) {
+        debugPrint(
+          'VERDICT: appropriate. Paid at setup and passphrase fallback '
+          'only - biometric unlock derives nothing and stays instant.',
+        );
       } else {
         debugPrint(
-          'VERDICT: slow. Consider lowering KdfParameters.current to '
-          '32 MiB. Decide before real vaults exist.',
+          'VERDICT: close to the 5 s ceiling. Consider lowering memory, '
+          'and remember slower devices than this one exist.',
         );
       }
       debugPrint('');

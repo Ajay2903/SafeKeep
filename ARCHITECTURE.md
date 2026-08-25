@@ -231,13 +231,21 @@ different key and its documents would be permanently unreadable.
 
 **These were tuned on real hardware, not extrapolated.** An earlier
 64 MiB / t=3 setting measured ~295 ms on an M-series laptop but **6 s on
-the target low-end Android phone** — past the 5 s ANR ceiling and a poor
-first-run experience. Cutting iterations rather than memory brought it to
-roughly 3 s while giving up as little GPU resistance as possible.
+a Galaxy A21s** (Exynos 850, budget 2020 hardware) — past the 5 s ANR
+ceiling and a poor first-run experience. Cutting iterations rather than
+memory brought it to a measured **~3 s on that same device**, giving up
+as little GPU resistance as possible.
+
+The desktop figure was off by ~20x, far more than a debug-vs-AOT gap
+would explain: Argon2id is memory-bandwidth-bound, so it punishes low-end
+memory subsystems much harder than a CPU benchmark suggests. Do not tune
+these from a laptop.
 
 **Only setup and passphrase unlock pay this cost.** `unlockWithBiometrics`
 reads the key straight from Keystore/Keychain and runs no derivation at
-all, so the everyday unlock is unaffected by these values.
+all — verified on-device as effectively instant. So the everyday unlock is
+unaffected by these values, and a few seconds once at onboarding is a fair
+price for the memory hardness.
 
 ### Two keys, via HKDF domain separation
 

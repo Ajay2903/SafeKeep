@@ -19,9 +19,15 @@ import 'package:meta/meta.dart';
 ///
 /// These were **tuned against a real low-end Android device**, not
 /// extrapolated from desktop. An earlier 64 MiB / t=3 setting measured
-/// ~295 ms on an M-series laptop but **6 s on the target phone** — past
-/// the 5 s Android ANR ceiling and a bad first-run experience. The values
-/// below halve that to roughly 3 s.
+/// ~295 ms on an M-series laptop but **6 s on a Galaxy A21s** (Exynos
+/// 850, budget 2020 hardware) — past the 5 s Android ANR ceiling and a
+/// poor first-run experience. The values below measure **~3 s on that
+/// same device** in profile mode.
+///
+/// Note the desktop figure was off by ~20x, not the 3-5x a debug-vs-AOT
+/// difference would explain: Argon2id is memory-bandwidth-bound, so it
+/// punishes low-end memory subsystems far harder than a CPU benchmark
+/// suggests. Never tune these from a laptop.
 ///
 /// * **memory = 49 152 KiB (48 MiB).** The dominant security parameter.
 ///   Argon2id's resistance to GPU/ASIC cracking comes from memory
