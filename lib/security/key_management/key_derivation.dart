@@ -90,11 +90,16 @@ class KeyDerivation {
   /// produce the same output, which is what makes restoring a vault on a
   /// new device possible.
   ///
+  /// [parameters] is required rather than defaulted: which cost factors a
+  /// vault was created with is security-critical and must be an explicit,
+  /// visible decision at every call site — a silent default is exactly how
+  /// a vault ends up re-derived under the wrong parameters.
+  ///
   /// Neither the passphrase nor any derived byte is ever logged.
   Future<DerivedKeys> deriveKeys({
     required String passphrase,
     required Uint8List salt,
-    KdfParameters parameters = KdfParameters.current,
+    required KdfParameters parameters,
   }) async {
     // Argon2id is the expensive part; keep it off the platform thread.
     final masterKey = await Isolate.run(
