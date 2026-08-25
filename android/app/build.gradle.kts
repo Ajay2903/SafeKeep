@@ -15,12 +15,16 @@ if (keystorePropertiesFile.exists()) {
 
 android {
     namespace = "com.ajaytibrewal.safekeep"
-    compileSdk = flutter.compileSdkVersion
+    // flutter_secure_storage requires compiling against SDK 37; Flutter's
+    // own default (flutter.compileSdkVersion) currently resolves lower.
+    compileSdk = 37
     ndkVersion = flutter.ndkVersion
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11
+        // Required by flutter_local_notifications.
+        isCoreLibraryDesugaringEnabled = true
     }
 
     kotlinOptions {
@@ -94,4 +98,5 @@ flutter {
 
 dependencies {
     implementation("org.jetbrains.kotlin:kotlin-stdlib:2.2.20")
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.5")
 }
