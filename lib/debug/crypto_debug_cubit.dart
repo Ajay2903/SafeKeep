@@ -162,7 +162,7 @@ class CryptoDebugCubit extends Cubit<CryptoDebugState> {
     await _keyManager.setUpVault(passphrase: passphrase);
     stopwatch.stop();
     _log(
-      'Vault created (Argon2id 64 MiB, t=3)',
+      'Vault created (Argon2id 48 MiB, t=2)',
       LogTone.success,
       millis: stopwatch.elapsedMilliseconds,
     );

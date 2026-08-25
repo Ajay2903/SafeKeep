@@ -42,7 +42,7 @@ security/
 
 ```text
 passphrase + salt
-      │  Argon2id (m=64 MiB, t=3, p=1)   ← cost factors persisted per vault
+      │  Argon2id (m=48 MiB, t=2, p=1)   ← cost factors persisted per vault
       ▼
   masterKey (32 bytes, never stored)
       │  HKDF-SHA256, two distinct info labels

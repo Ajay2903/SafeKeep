@@ -7,7 +7,7 @@ import 'package:safekeep/security/key_management/key_derivation.dart';
 
 /// Cheap parameters for tests that only care about behaviour, not cost.
 ///
-/// Production uses [KdfParameters.current] (64 MiB, t=3), which would make
+/// Production uses [KdfParameters.current] (48 MiB, t=2), which would make
 /// this suite take minutes. Determinism, domain separation, and salt
 /// handling are all independent of the cost factors, so testing them at
 /// low cost is sound — the *real* parameters are asserted separately in
@@ -58,8 +58,8 @@ void main() {
     // must be a deliberate edit to this test, with the migration
     // consequences understood (see KdfParameters' class doc).
     test('are the reviewed values', () {
-      expect(KdfParameters.current.memoryKib, 65536, reason: '64 MiB');
-      expect(KdfParameters.current.iterations, 3);
+      expect(KdfParameters.current.memoryKib, 49152, reason: '48 MiB');
+      expect(KdfParameters.current.iterations, 2);
       expect(KdfParameters.current.parallelism, 1);
       expect(KdfParameters.current.keyLengthBytes, 32, reason: 'AES-256');
     });

@@ -17,16 +17,24 @@ import 'package:meta/meta.dart';
 ///
 /// # Chosen defaults ([current]) and the reasoning
 ///
-/// * **memory = 65 536 KiB (64 MiB).** The dominant security parameter.
+/// These were **tuned against a real low-end Android device**, not
+/// extrapolated from desktop. An earlier 64 MiB / t=3 setting measured
+/// ~295 ms on an M-series laptop but **6 s on the target phone** — past
+/// the 5 s Android ANR ceiling and a bad first-run experience. The values
+/// below halve that to roughly 3 s.
+///
+/// * **memory = 49 152 KiB (48 MiB).** The dominant security parameter.
 ///   Argon2id's resistance to GPU/ASIC cracking comes from memory
-///   hardness, not raw passes, so memory is where budget is best spent.
-///   OWASP's floor is 19 MiB; 64 MiB is ~3.4x that. Measured at ~295 ms
-///   AOT on an M-series laptop, so roughly 1-3 s on a low-end phone —
-///   acceptable as a once-per-unlock cost. Going higher (128 MiB measured
-///   at ~604 ms) risks OOM on low-memory Android devices for a
-///   proportionally smaller security gain.
-/// * **iterations = 3.** OWASP's floor is 2. Passes are the cheap knob
-///   once memory is set; 3 adds margin at ~1/3 more time.
+///   hardness, not raw passes: memory is what caps how many guesses an
+///   attacker can run *in parallel* (an 8 GB GPU fits ~170 concurrent
+///   instances at 48 MiB, but ~420 at 19 MiB). OWASP's floor is 19 MiB;
+///   this is ~2.5x that. Going much higher also risks OOM on low-memory
+///   Android devices.
+/// * **iterations = 2.** OWASP's floor, and the knob that was cut to buy
+///   the speed. Deliberate ordering: passes only add *serial* work, so at
+///   any fixed time budget more memory with fewer passes beats less
+///   memory with more. 48 MiB / t=2 and 32 MiB / t=3 cost the same ~3 s
+///   here, but the former keeps half again as much memory hardness.
 /// * **parallelism = 1.** Argon2's `p` models *the attacker's* per-guess
 ///   parallelism, so raising it does not help the defender. OWASP
 ///   recommends 1. It also keeps derivation single-threaded and therefore
@@ -40,8 +48,17 @@ import 'package:meta/meta.dart';
 /// anywhere. An attacker who obtains encrypted blobs (e.g. from the user's
 /// own cloud backup) can guess passphrases offline, unlimited and in
 /// parallel. The KDF cost is therefore the *only* thing standing between a
-/// weak passphrase and the plaintext, which is why these are set well
-/// above the published minimums rather than at them.
+/// weak passphrase and the plaintext, which is why memory sits well above
+/// the published floor even though iterations sit at it.
+///
+/// # What actually pays this cost
+///
+/// Worth knowing before tuning further: **only vault setup, passphrase
+/// unlock, and passphrase verification run Argon2id.** Biometric unlock
+/// reads the key straight from Keystore/Keychain and does no derivation
+/// at all, so the everyday unlock is unaffected by these values. The cost
+/// is paid once at setup and thereafter only when biometrics are
+/// unavailable, fail, or the vault is opened on a new device.
 @immutable
 class KdfParameters {
   const KdfParameters({
@@ -84,8 +101,8 @@ class KdfParameters {
   /// Defaults for vaults created by this build. See the class doc for the
   /// reasoning behind each value.
   static const KdfParameters current = KdfParameters(
-    memoryKib: 65536,
-    iterations: 3,
+    memoryKib: 49152,
+    iterations: 2,
     parallelism: 1,
     keyLengthBytes: 32,
   );

@@ -206,7 +206,7 @@ next to the code; this is the summary.
 
 Chosen over PBKDF2-HMAC-SHA256. PBKDF2 parallelises on GPUs and ASICs at
 near-zero marginal cost per guess; Argon2id is memory-hard, forcing an
-attacker to allocate 64 MiB per concurrent guess. That matters
+attacker to allocate 48 MiB per concurrent guess. That matters
 disproportionately here: SafeKeep is zero-knowledge with no server, so
 nothing rate-limits anything. An attacker holding blobs from the user's
 own cloud backup cracks offline, unlimited and in parallel. The KDF cost
@@ -218,8 +218,8 @@ That test is what justifies trusting it at all.
 
 | Parameter | Value | Why |
 |---|---|---|
-| memory | 65 536 KiB (64 MiB) | Dominant security factor. ~3.4x OWASP's 19 MiB floor. Measured ~295 ms AOT desktop → est. 1-3 s low-end phone. 128 MiB measured ~604 ms and was rejected for OOM risk. |
-| iterations | 3 | OWASP floor is 2; passes are the cheap knob once memory is set. |
+| memory | 49 152 KiB (48 MiB) | Dominant security factor: memory caps how many guesses an attacker runs *in parallel*. ~2.5x OWASP's 19 MiB floor. Tuned against a real low-end phone (see below). |
+| iterations | 2 | OWASP's floor. Passes add only *serial* work, so at a fixed time budget more memory with fewer passes beats the reverse — 48 MiB/t=2 and 32 MiB/t=3 cost the same, but the former keeps half again the memory hardness. |
 | parallelism | 1 | Argon2's `p` models *attacker* parallelism, so raising it does not help the defender. OWASP recommends 1. |
 | key length | 32 bytes | 256 bits, matching AES-256. |
 | salt | 16 bytes, `Random.secure` | RFC 9106 recommendation. Not secret; stored with the vault. Makes rainbow tables useless and stops two users with the same passphrase sharing a key. |
@@ -228,6 +228,16 @@ That test is what justifies trusting it at all.
 deterministic for fixed parameters, so if a future release raised them and
 derivation always used today's values, every existing vault would derive a
 different key and its documents would be permanently unreadable.
+
+**These were tuned on real hardware, not extrapolated.** An earlier
+64 MiB / t=3 setting measured ~295 ms on an M-series laptop but **6 s on
+the target low-end Android phone** — past the 5 s ANR ceiling and a poor
+first-run experience. Cutting iterations rather than memory brought it to
+roughly 3 s while giving up as little GPU resistance as possible.
+
+**Only setup and passphrase unlock pay this cost.** `unlockWithBiometrics`
+reads the key straight from Keystore/Keychain and runs no derivation at
+all, so the everyday unlock is unaffected by these values.
 
 ### Two keys, via HKDF domain separation
 
@@ -372,7 +382,7 @@ survives as `deleteVault()`.
 
   Use `--profile`; debug mode is materially slower and will make the
   numbers look worse than a real build. It prints Argon2id timings for
-  the production 64 MiB profile alongside 32 MiB and the OWASP floor so
+  the production 48 MiB profile alongside 32 MiB and the OWASP floor so
   they can be compared on the same hardware, prints AES-GCM throughput at
   1/5/10 MB, re-checks the RFC 9106 vector on-device, and fails outright
   if derivation crosses the 5 s Android ANR threshold. Guidance for

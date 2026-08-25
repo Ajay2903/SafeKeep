@@ -36,7 +36,7 @@ import 'package:safekeep/security/key_management/key_derivation.dart';
 /// multi-second unlock is still bad, and 5 s is the hard ceiling this test
 /// asserts against.
 ///
-/// Guidance for the production 64 MiB profile:
+/// Guidance for the production 48 MiB profile:
 ///
 /// * **under 1.5 s** — comfortable, keep the current parameters.
 /// * **1.5-3 s** — acceptable for a vault unlock; check how it feels.
@@ -62,12 +62,12 @@ void main() {
   const passphrase = 'a representative passphrase for benchmarking';
 
   const profiles = <(String, KdfParameters)>[
-    ('PRODUCTION  64 MiB t=3 p=1', KdfParameters.current),
+    ('PRODUCTION  48 MiB t=2 p=1', KdfParameters.current),
     (
-      'fallback    32 MiB t=3 p=1',
+      'fallback    32 MiB t=2 p=1',
       KdfParameters(
         memoryKib: 32768,
-        iterations: 3,
+        iterations: 2,
         parallelism: 1,
         keyLengthBytes: 32,
       ),
