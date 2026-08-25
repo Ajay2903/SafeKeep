@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+# Optional pre-commit gate: format check, analyze, test.
+#
+# Not enabled by default — see ARCHITECTURE.md for how to opt in. Mirrors
+# (a subset of) what CI runs in .github/workflows/main.yaml, so a red
+# pre-commit means CI would also be red.
+set -euo pipefail
+
+echo "pre-commit: dart format --output=none --set-exit-if-changed ."
+dart format --output=none --set-exit-if-changed .
+
+echo "pre-commit: flutter analyze"
+flutter analyze
+
+echo "pre-commit: flutter test"
+flutter test
+
+echo "pre-commit: all checks passed"
