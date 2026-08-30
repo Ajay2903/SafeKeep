@@ -6,7 +6,7 @@ import 'package:safekeep/security/key_management/auto_lock_controller.dart';
 import 'package:safekeep/security/key_management/key_manager.dart';
 
 /// Records lock() calls; the controller's only job is to call it at the
-/// right time.
+/// right moment.
 class _SpyKeyManager implements KeyManager {
   int lockCalls = 0;
   bool unlocked = true;
@@ -46,13 +46,22 @@ class _SpyKeyManager implements KeyManager {
 }
 
 void main() {
-  const grace = Duration(seconds: 20);
+  const background = Duration(seconds: 20);
+  const idle = Duration(minutes: 2);
 
-  group('AutoLockController', () {
+  AutoLockController controllerFor(_SpyKeyManager keyManager) {
+    return AutoLockController(
+      keyManager: keyManager,
+      backgroundGracePeriod: background,
+      inactivityTimeout: idle,
+    );
+  }
+
+  group('backgrounding', () {
     test('does not lock while the app stays in the foreground', () {
       fakeAsync((async) {
         final keyManager = _SpyKeyManager();
-        AutoLockController(keyManager: keyManager, gracePeriod: grace);
+        controllerFor(keyManager);
 
         async.elapse(const Duration(minutes: 10));
 
@@ -60,29 +69,23 @@ void main() {
       });
     });
 
-    test('locks once the grace period elapses in the background', () {
+    test('locks once the grace period elapses', () {
       fakeAsync((async) {
         final keyManager = _SpyKeyManager();
-        final controller = AutoLockController(
-          keyManager: keyManager,
-          gracePeriod: grace,
-        )..onBackgrounded();
+        final controller = controllerFor(keyManager)..onBackgrounded();
 
-        async.elapse(grace + const Duration(seconds: 1));
+        async.elapse(background + const Duration(seconds: 1));
 
         expect(keyManager.lockCalls, 1);
         expect(keyManager.isUnlocked, isFalse);
-        expect(controller.isCountingDown, isFalse);
+        expect(controller.isBackgroundCountdownRunning, isFalse);
       });
     });
 
     test('does not lock before the grace period elapses', () {
       fakeAsync((async) {
         final keyManager = _SpyKeyManager();
-        AutoLockController(
-          keyManager: keyManager,
-          gracePeriod: grace,
-        ).onBackgrounded();
+        controllerFor(keyManager).onBackgrounded();
 
         async.elapse(const Duration(seconds: 19));
 
@@ -90,19 +93,16 @@ void main() {
       });
     });
 
-    test('returning to the foreground in time cancels the lock', () {
+    test('returning in time cancels the lock', () {
       fakeAsync((async) {
         // The case that matters for usability: a file picker or camera
         // round trip must not force a re-unlock.
         final keyManager = _SpyKeyManager();
-        final controller = AutoLockController(
-          keyManager: keyManager,
-          gracePeriod: grace,
-        )..onBackgrounded();
+        final controller = controllerFor(keyManager)..onBackgrounded();
 
         async.elapse(const Duration(seconds: 10));
         controller.onForegrounded();
-        async.elapse(const Duration(minutes: 5));
+        async.elapse(const Duration(seconds: 15));
 
         expect(keyManager.lockCalls, 0);
         expect(keyManager.isUnlocked, isTrue);
@@ -112,17 +112,13 @@ void main() {
     test('re-backgrounding restarts the countdown', () {
       fakeAsync((async) {
         final keyManager = _SpyKeyManager();
-        final controller = AutoLockController(
-          keyManager: keyManager,
-          gracePeriod: grace,
-        )..onBackgrounded();
+        final controller = controllerFor(keyManager)..onBackgrounded();
 
         async.elapse(const Duration(seconds: 15));
         controller
           ..onForegrounded()
           ..onBackgrounded();
 
-        // 15s already elapsed, but the countdown restarted from zero.
         async.elapse(const Duration(seconds: 15));
         expect(keyManager.lockCalls, 0);
 
@@ -134,7 +130,7 @@ void main() {
     test('repeated backgrounding does not stack timers', () {
       fakeAsync((async) {
         final keyManager = _SpyKeyManager();
-        AutoLockController(keyManager: keyManager, gracePeriod: grace)
+        controllerFor(keyManager)
           ..onBackgrounded()
           ..onBackgrounded()
           ..onBackgrounded();
@@ -144,41 +140,120 @@ void main() {
         expect(keyManager.lockCalls, 1);
       });
     });
+  });
 
-    test('lockNow locks immediately without waiting', () {
+  group('inactivity', () {
+    test('locks after the timeout with no interaction', () {
       fakeAsync((async) {
         final keyManager = _SpyKeyManager();
-        final controller = AutoLockController(
-          keyManager: keyManager,
-          gracePeriod: grace,
-        )..lockNow();
+        controllerFor(keyManager).recordInteraction();
+
+        async.elapse(idle + const Duration(seconds: 1));
 
         expect(keyManager.lockCalls, 1);
-        expect(controller.isCountingDown, isFalse);
+      });
+    });
 
-        // And no second lock from a leftover timer.
-        async.elapse(const Duration(minutes: 5));
+    test('interaction restarts the countdown', () {
+      fakeAsync((async) {
+        final keyManager = _SpyKeyManager();
+        final controller = controllerFor(keyManager)..recordInteraction();
+
+        // Touch the screen every minute for an hour.
+        for (var i = 0; i < 60; i++) {
+          async.elapse(const Duration(minutes: 1));
+          controller.recordInteraction();
+        }
+
+        expect(keyManager.lockCalls, 0, reason: 'active use must not lock');
+      });
+    });
+
+    test('no countdown is armed while already locked', () {
+      fakeAsync((async) {
+        final keyManager = _SpyKeyManager()..unlocked = false;
+        final controller = controllerFor(keyManager)..recordInteraction();
+
+        expect(controller.isInactivityCountdownRunning, isFalse);
+        async.elapse(const Duration(hours: 1));
+        expect(keyManager.lockCalls, 0);
+      });
+    });
+  });
+
+  group('the two triggers do not race', () {
+    test('backgrounding cancels the idle countdown', () {
+      fakeAsync((async) {
+        // Leaving both armed would make the effective grace period
+        // whichever happened to be shorter, which is unpredictable.
+        final keyManager = _SpyKeyManager();
+        final controller = controllerFor(keyManager)
+          ..recordInteraction()
+          ..onBackgrounded();
+        expect(controller.isInactivityCountdownRunning, isFalse);
+
+        async.elapse(background + const Duration(seconds: 1));
         expect(keyManager.lockCalls, 1);
+      });
+    });
+
+    test('returning to the foreground restarts the idle countdown', () {
+      fakeAsync((async) {
+        final keyManager = _SpyKeyManager();
+        final controller = controllerFor(keyManager)..onBackgrounded();
+
+        async.elapse(const Duration(seconds: 5));
+        controller.onForegrounded();
+
+        expect(controller.isInactivityCountdownRunning, isTrue);
+        async.elapse(idle + const Duration(seconds: 1));
+        expect(keyManager.lockCalls, 1, reason: 'idle timer took over');
+      });
+    });
+  });
+
+  group('explicit control', () {
+    test('lockNow locks immediately and cancels both timers', () {
+      fakeAsync((async) {
+        final keyManager = _SpyKeyManager();
+        final controller = controllerFor(keyManager)..lockNow();
+
+        expect(keyManager.lockCalls, 1);
+        expect(controller.isBackgroundCountdownRunning, isFalse);
+        expect(controller.isInactivityCountdownRunning, isFalse);
+
+        async.elapse(const Duration(minutes: 10));
+        expect(keyManager.lockCalls, 1, reason: 'no leftover timer fired');
       });
     });
 
     test('dispose cancels a pending lock', () {
       fakeAsync((async) {
         final keyManager = _SpyKeyManager();
-        AutoLockController(keyManager: keyManager, gracePeriod: grace)
+        controllerFor(keyManager)
           ..onBackgrounded()
           ..dispose();
 
-        async.elapse(const Duration(minutes: 5));
+        async.elapse(const Duration(minutes: 10));
 
         expect(keyManager.lockCalls, 0);
       });
     });
+  });
 
-    test('default grace period is 30 seconds', () {
+  group('defaults', () {
+    test('background grace period is 30 seconds', () {
       expect(
-        AutoLockController.defaultGracePeriod,
+        AutoLockController.defaultBackgroundGracePeriod,
         const Duration(seconds: 30),
+      );
+    });
+
+    test('idling gets more slack than walking away', () {
+      // The user is plausibly still present when idle in the foreground.
+      expect(
+        AutoLockController.defaultInactivityTimeout,
+        greaterThan(AutoLockController.defaultBackgroundGracePeriod),
       );
     });
   });
