@@ -24,6 +24,9 @@ class _SpyKeyManager implements KeyManager {
   Future<Uint8List> encryptionKeyFor(String keyId) async => Uint8List(32);
 
   @override
+  Future<Uint8List> databaseKey() async => Uint8List(32);
+
+  @override
   Future<bool> isInitialized() async => true;
 
   @override

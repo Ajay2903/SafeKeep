@@ -20,6 +20,7 @@ import 'package:safekeep/security/security_exceptions.dart';
 /// |                   |         | the params they were created under  |
 /// | verifier          | no*     | checks a passphrase without a doc   |
 /// | encryption key    | **yes** | enables biometric unlock            |
+/// | database key      | **yes** | SQLCipher key, same reason          |
 ///
 /// \* The verifier is not the key and reveals nothing about it (see
 /// `KeyDerivation` for the HKDF domain separation), but it does let an
@@ -30,8 +31,9 @@ import 'package:safekeep/security/security_exceptions.dart';
 ///
 /// # Storing the key: the deliberate tradeoff
 ///
-/// The derived encryption key is written to secure storage (Android
-/// Keystore / iOS Keychain) so that biometric unlock does not require
+/// The derived encryption and database keys are written to secure storage
+/// (Android Keystore / iOS Keychain) so that biometric unlock does not
+/// require
 /// re-entering the passphrase. The consequence, stated plainly: after
 /// setup, the passphrase is no longer the only thing standing between an
 /// attacker and the data on *this device* — hardware-backed storage plus
@@ -71,14 +73,16 @@ class VaultKeyManager implements KeyManager {
   static const String _paramsKey = 'safekeep.v1.kdf_params';
   static const String _verifierKey = 'safekeep.v1.verifier';
   static const String _encryptionKeyKey = 'safekeep.v1.encryption_key';
+  static const String _databaseKeyKey = 'safekeep.v1.database_key';
 
   final SecureKeyValueStore _store;
   final BiometricGate _biometricGate;
   final KeyDerivation _keyDerivation;
   final KdfParameters _setupParameters;
 
-  /// The session key. Non-null exactly when the vault is unlocked.
+  /// Session key material. Both non-null exactly when unlocked.
   Uint8List? _sessionKey;
+  Uint8List? _sessionDatabaseKey;
 
   @override
   bool get isUnlocked => _sessionKey != null;
@@ -109,10 +113,12 @@ class VaultKeyManager implements KeyManager {
     await _store.write(_saltKey, base64Encode(salt));
     await _store.write(_paramsKey, parameters.toJson());
     await _store.write(_verifierKey, base64Encode(keys.verifier));
+    await _store.write(_databaseKeyKey, base64Encode(keys.databaseKey));
     await _store.write(_encryptionKeyKey, base64Encode(keys.encryptionKey));
 
     // Setup implies the user just proved knowledge of the passphrase.
     _sessionKey = Uint8List.fromList(keys.encryptionKey);
+    _sessionDatabaseKey = Uint8List.fromList(keys.databaseKey);
     keys.destroy();
 
     AppLogger.instance.info('Vault created');
@@ -140,6 +146,7 @@ class VaultKeyManager implements KeyManager {
       // the same value, and this path stays correct even if the stored
       // copy is ever removed.
       _sessionKey = Uint8List.fromList(keys.encryptionKey);
+      _sessionDatabaseKey = Uint8List.fromList(keys.databaseKey);
       AppLogger.instance.info('Vault unlocked with passphrase');
       return true;
     } finally {
@@ -163,11 +170,13 @@ class VaultKeyManager implements KeyManager {
     }
 
     final stored = await _store.read(_encryptionKeyKey);
-    if (stored == null) {
+    final storedDatabaseKey = await _store.read(_databaseKeyKey);
+    if (stored == null || storedDatabaseKey == null) {
       throw const VaultNotInitializedException();
     }
 
     _sessionKey = Uint8List.fromList(base64Decode(stored));
+    _sessionDatabaseKey = Uint8List.fromList(base64Decode(storedDatabaseKey));
     AppLogger.instance.info('Vault unlocked with biometrics');
     return true;
   }
@@ -184,15 +193,28 @@ class VaultKeyManager implements KeyManager {
   }
 
   @override
+  Future<Uint8List> databaseKey() async {
+    final key = _sessionDatabaseKey;
+    if (key == null) {
+      throw const VaultLockedException();
+    }
+    // A copy, for the same reason as encryptionKeyFor.
+    return Uint8List.fromList(key);
+  }
+
+  @override
   void lock() {
     final key = _sessionKey;
-    if (key == null) return;
+    final databaseKeyBytes = _sessionDatabaseKey;
+    if (key == null && databaseKeyBytes == null) return;
 
-    // Overwrite before dropping the reference. Best-effort: Dart cannot
+    // Overwrite before dropping the references. Best-effort: Dart cannot
     // guarantee the GC has not already copied these bytes, but this
-    // meaningfully shortens the window in which the key sits in the heap.
-    key.fillRange(0, key.length, 0);
+    // meaningfully shortens the window in which keys sit in the heap.
+    key?.fillRange(0, key.length, 0);
+    databaseKeyBytes?.fillRange(0, databaseKeyBytes.length, 0);
     _sessionKey = null;
+    _sessionDatabaseKey = null;
 
     AppLogger.instance.info('Vault locked');
   }
@@ -201,6 +223,7 @@ class VaultKeyManager implements KeyManager {
   Future<void> deleteVault() async {
     lock();
     await _store.delete(_encryptionKeyKey);
+    await _store.delete(_databaseKeyKey);
     await _store.delete(_verifierKey);
     await _store.delete(_saltKey);
     await _store.delete(_paramsKey);

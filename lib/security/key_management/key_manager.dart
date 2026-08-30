@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:safekeep/security/encryption/encryption_key_source.dart';
 import 'package:safekeep/security/security_exceptions.dart';
 
@@ -41,6 +43,13 @@ abstract interface class KeyManager implements EncryptionKeySource {
 
   /// Whether key material is currently held in memory.
   bool get isUnlocked;
+
+  /// Returns the SQLCipher key for the metadata database.
+  ///
+  /// A sibling of the document encryption key, derived from the same
+  /// master key under its own HKDF label. Throws [VaultLockedException]
+  /// while the vault is locked.
+  Future<Uint8List> databaseKey();
 
   /// Creates the vault: derives key material from [passphrase], persists
   /// the salt, KDF parameters, verifier, and encryption key, and leaves

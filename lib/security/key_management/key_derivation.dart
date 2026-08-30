@@ -31,8 +31,15 @@ import 'package:safekeep/security/key_management/kdf_parameters.dart';
 /// ```text
 /// masterKey     = Argon2id(passphrase, salt, params)
 /// encryptionKey = HKDF-SHA256(masterKey, info: "safekeep:v1:encryption")
+/// databaseKey   = HKDF-SHA256(masterKey, info: "safekeep:v1:database")
 /// verifier      = HKDF-SHA256(masterKey, info: "safekeep:v1:verification")
 /// ```
+///
+/// The database key is a *sibling* of the encryption key, derived from the
+/// same master key under its own label — not a child derived from the
+/// encryption key. Deriving one purpose key from another would mean
+/// reusing the encryption key as HKDF input keying material, which is
+/// exactly the dual-use this construction exists to avoid.
 ///
 /// The point of this domain separation is that the *verifier is persisted*
 /// (it is how a re-entered passphrase is checked) while the encryption key
@@ -70,6 +77,7 @@ class KeyDerivation {
   /// and must be treated as a wire format.
   static const String _encryptionInfo = 'safekeep:v1:encryption';
   static const String _verificationInfo = 'safekeep:v1:verification';
+  static const String _databaseInfo = 'safekeep:v1:database';
 
   /// Generates a fresh random salt using a cryptographically secure RNG.
   ///
@@ -116,12 +124,21 @@ class KeyDerivation {
         info: _encryptionInfo,
         lengthBytes: parameters.keyLengthBytes,
       );
+      final databaseKey = await _expand(
+        masterKey: masterKey,
+        info: _databaseInfo,
+        lengthBytes: parameters.keyLengthBytes,
+      );
       final verifier = await _expand(
         masterKey: masterKey,
         info: _verificationInfo,
         lengthBytes: parameters.keyLengthBytes,
       );
-      return DerivedKeys(encryptionKey: encryptionKey, verifier: verifier);
+      return DerivedKeys(
+        encryptionKey: encryptionKey,
+        databaseKey: databaseKey,
+        verifier: verifier,
+      );
     } finally {
       // The master key itself is not needed beyond this point.
       masterKey.fillRange(0, masterKey.length, 0);
@@ -182,10 +199,17 @@ Uint8List _utf8Bytes(String value) =>
 ///
 /// Callers should [destroy] this once the keys have been stored or used.
 class DerivedKeys {
-  DerivedKeys({required this.encryptionKey, required this.verifier});
+  DerivedKeys({
+    required this.encryptionKey,
+    required this.databaseKey,
+    required this.verifier,
+  });
 
-  /// AES-256-GCM key. Never persisted in plaintext, never logged.
+  /// AES-256-GCM key for document blobs. Never logged.
   final Uint8List encryptionKey;
+
+  /// SQLCipher key for the metadata database. Never logged.
+  final Uint8List databaseKey;
 
   /// Value compared against the stored verifier to check a passphrase.
   /// Safe to persist; reveals nothing about [encryptionKey].
@@ -199,6 +223,7 @@ class DerivedKeys {
   /// sits in the heap; it is not a guarantee of erasure.
   void destroy() {
     encryptionKey.fillRange(0, encryptionKey.length, 0);
+    databaseKey.fillRange(0, databaseKey.length, 0);
     verifier.fillRange(0, verifier.length, 0);
   }
 }

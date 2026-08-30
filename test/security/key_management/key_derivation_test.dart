@@ -170,6 +170,36 @@ void main() {
       expect(keys.encryptionKey, isNot(keys.verifier));
     });
 
+    test('all three keys are mutually distinct', () async {
+      final keys = await kdf.deriveKeys(
+        passphrase: 'passphrase',
+        salt: _salt(0x01),
+        parameters: _fastParams,
+      );
+
+      // The database key is a sibling of the encryption key, not a
+      // child: none may be derivable from another by inspection.
+      expect(keys.encryptionKey, isNot(keys.databaseKey));
+      expect(keys.encryptionKey, isNot(keys.verifier));
+      expect(keys.databaseKey, isNot(keys.verifier));
+    });
+
+    test('the database key is deterministic', () async {
+      final salt = _salt(0x03);
+      final first = await kdf.deriveKeys(
+        passphrase: 'passphrase',
+        salt: salt,
+        parameters: _fastParams,
+      );
+      final second = await kdf.deriveKeys(
+        passphrase: 'passphrase',
+        salt: salt,
+        parameters: _fastParams,
+      );
+
+      expect(first.databaseKey, second.databaseKey);
+    });
+
     test('both outputs are 32 bytes', () async {
       final keys = await kdf.deriveKeys(
         passphrase: 'passphrase',
@@ -178,6 +208,7 @@ void main() {
       );
 
       expect(keys.encryptionKey.length, 32);
+      expect(keys.databaseKey.length, 32);
       expect(keys.verifier.length, 32);
     });
 
@@ -230,6 +261,7 @@ void main() {
       keys.destroy();
 
       expect(keys.encryptionKey, everyElement(0));
+      expect(keys.databaseKey, everyElement(0));
       expect(keys.verifier, everyElement(0));
     });
   });

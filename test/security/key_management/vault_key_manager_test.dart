@@ -266,6 +266,45 @@ void main() {
     });
   });
 
+  group('database key', () {
+    setUp(setUpVault);
+
+    test('is available while unlocked and differs from the doc key', () async {
+      final dbKey = await manager.databaseKey();
+      final encKey = await manager.encryptionKeyFor('master');
+
+      expect(dbKey.length, 32);
+      expect(dbKey, isNot(encKey));
+    });
+
+    test('throws once locked', () async {
+      manager.lock();
+
+      await expectLater(
+        manager.databaseKey,
+        throwsA(isA<VaultLockedException>()),
+      );
+    });
+
+    test('is identical across passphrase and biometric unlock', () async {
+      final atSetup = await manager.databaseKey();
+
+      manager.lock();
+      await manager.unlockWithPassphrase(_passphrase);
+      expect(await manager.databaseKey(), atSetup);
+
+      manager.lock();
+      await manager.unlockWithBiometrics();
+      expect(await manager.databaseKey(), atSetup);
+    });
+
+    test('is removed by deleteVault', () async {
+      await manager.deleteVault();
+
+      expect(store.values.containsKey('safekeep.v1.database_key'), isFalse);
+    });
+  });
+
   group('locked state', () {
     setUp(setUpVault);
 
