@@ -7,9 +7,11 @@ Safekeep is a privacy-first, offline document vault.
 * **Phase 1** — the encryption layer: Argon2id key derivation,
   AES-256-GCM document encryption, and the vault key lifecycle. See
   [Phase 1 — encryption layer](#phase-1--encryption-layer).
+* **Phase 2** — the storage layer: encrypted blobs on disk, a SQLCipher
+  metadata database under its own derived key, and the repository that
+  composes them into a working vault. See `lib/data/README.md`.
 
-No UI feature work has been done yet; screens and data models are later
-phases.
+No UI has been built yet; screens are Phase 3.
 
 ## Flavors
 
@@ -73,19 +75,15 @@ the app's security posture has exactly one directory to read). See
 
 **Status (Phase 1): implemented.** Argon2id key derivation, AES-256-GCM
 encryption, the vault key lifecycle, and the biometric gate are all real
-code with 117 tests. See the "Phase 1 — encryption layer" section below and
+code with 192 tests. See the "Phase 1 — encryption layer" section below and
 `lib/security/README.md` for the design.
 
 ### `data/`, `domain/`, `presentation/`
 
-`data/` has empty stub classes for `AppDatabase` (sqflite_sqlcipher),
-`DocumentFileStorage` (path_provider), and `SyncService` (placeholder,
-not scheduled). `domain/` and `presentation/` are documented but
-intentionally have no `models/`, `repositories/`, `screens/`, or
-`widgets/` subdirectories yet — creating them now would mean designing
-the vault's data model and screens, which is feature work and out of
-scope for Phase 0. Each has a `README.md` explaining what goes there when
-the first feature lands.
+`data/` and `domain/` are implemented as of Phase 2 — see
+`lib/data/README.md` and `lib/domain/README.md`. `data/sync/` remains an
+unscheduled placeholder. `presentation/` is still empty; screens are
+Phase 3.
 
 ### Counter feature
 

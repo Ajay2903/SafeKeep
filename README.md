@@ -8,12 +8,13 @@ import your passport, licence, insurance and tax documents; they are
 encrypted on-device and never leave it in readable form. No server, no
 accounts, no telemetry.
 
-> ### 🚧 Status: in active development — Phase 1 of 10 complete
+> ### 🚧 Status: in active development — Phases 0-2 of 10 complete
 >
-> **The encryption layer is built and tested. There is no user interface
-> yet.** Running the app today shows the scaffold's placeholder screen.
-> The crypto can be exercised through the test suite or a debug harness
-> (see [Trying it](#trying-it)).
+> **There is a working encrypted vault, and no user interface yet.**
+> Documents can be added, encrypted, stored, listed, opened, and deleted
+> — all through code. Running the app today shows the scaffold's
+> placeholder screen; the vault is exercised through the test suite or a
+> debug harness (see [Trying it](#trying-it)).
 >
 > This repository is deliberately being built bottom-up: the security
 > layer first, proven with tests, before any UI is written on top of it.
@@ -53,9 +54,9 @@ designed to say so plainly rather than quietly keep a spare key.
 ```
 lib/
   security/       ← encryption, key management, biometric gate  (Phase 1 ✅)
-  data/           ← encrypted file storage + SQLCipher database (Phase 2)
-  domain/         ← models and repository interfaces
-  presentation/   ← screens, widgets, BLoC/Cubit state
+  data/           ← encrypted blob storage + SQLCipher database (Phase 2 ✅)
+  domain/         ← models and repository interfaces            (Phase 2 ✅)
+  presentation/   ← screens, widgets, BLoC/Cubit state          (Phase 3)
   core/           ← config, theming, logging, flavor handling   (Phase 0 ✅)
 ```
 
@@ -146,8 +147,8 @@ rejected rather than silently accepted.
 |---|---|---|
 | **0** | Scaffold, flavors, layered structure, CI, theming, logging | ✅ Complete |
 | **1** | Crypto core: Argon2id, AES-256-GCM, key lifecycle, biometric gate | ✅ Complete |
-| **2** | Encrypted file storage + SQLCipher metadata database | ⏳ Next |
-| 3 | Onboarding, lock/unlock screens, auto-lock | Planned |
+| **2** | Encrypted blob storage + SQLCipher metadata database | ✅ Complete |
+| **3** | Onboarding, lock/unlock screens, auto-lock | ⏳ Next |
 | 4 | Vault UI — document list, viewer, categories, search | Planned |
 | 5 | Document scanner + import | Planned |
 | 6 | Expiry reminders via local notifications | Planned |
@@ -167,18 +168,23 @@ rejected rather than silently accepted.
 - Passphrase verification without decrypting any document
 - Document-bound ciphertext (GCM associated data) preventing blob
   substitution between documents
+- Encrypted blobs on disk, written atomically; plaintext is never written
+  to disk at all
+- SQLCipher metadata database (title, category, tags, notes, expiry,
+  timestamps, sync version) under its own derived key
+- A working vault: add, open, list, update, and delete documents
 - An on-device benchmark and a debug harness for verifying the platform
   integrations that unit tests cannot reach
 
-**Immediately next:** Phase 2 — encrypted file storage on disk and the
-SQLCipher metadata database.
+**Immediately next:** Phase 3 — onboarding, and the lock/unlock screens
+that put a real interface in front of the vault.
 
 ### Tests
 
-**117 tests**, `flutter analyze` clean under
+**192 tests**, `flutter analyze` clean under
 [very_good_analysis][very_good_analysis_link].
 
-Line coverage is **94%** for `lib/security` and **92.8%** overall across
+Line coverage is **94%** for `lib/security` and **92%** overall across
 code reachable from unit tests. The two platform wrappers — Keystore /
 Keychain access and the biometric prompt — are excluded because they
 require platform channels that cannot run under `flutter test`. Both are
@@ -189,6 +195,12 @@ Coverage includes round-trip correctness at 5 MB, nonce non-reuse across
 100 encryptions, wrong-key and tampered-ciphertext rejection, KDF
 determinism, locked-vault access denial, and a simulated cross-device
 restore that re-derives the key from the passphrase alone.
+
+An end-to-end vault test runs the real production path — real Argon2id,
+AES-GCM, file I/O and SQL — and asserts that after adding a document the
+blob on disk contains none of the plaintext in any encoding, that
+document bytes appear nowhere in a full database dump, that a swapped
+blob is rejected, and that opening returns the exact original bytes.
 
 ---
 
