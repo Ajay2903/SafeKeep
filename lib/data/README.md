@@ -17,8 +17,34 @@ storage/database packages, or the filesystem.
   and fully offline-capable is the default; sync is opt-in and does not
   exist yet.
 
-## Current status (Phase 0)
+## Current status (Phase 2)
 
-Every file in this directory is an **empty stub** — a class shape with no
-real database, filesystem, or network logic. Concrete implementations land
-alongside the first feature that needs them.
+Implemented, and composed into a working vault:
+
+- `vault_document_repository.dart` — `VaultDocumentRepository`, the
+  `DocumentRepository` implementation. Owns the *ordering* of operations
+  across encryption, blob storage, and metadata, which is where a naive
+  implementation loses data. Each method documents why its steps run in
+  the order they do.
+- `document_id.dart` — 128-bit random hex ids. The id is the metadata
+  primary key, the blob's filename, *and* the AES-GCM associated data, so
+  a collision would be doubly damaging; it is drawn from the platform
+  CSPRNG rather than being sequential.
+- `storage/document_file_storage.dart` — encrypted blobs on disk, written
+  atomically via temp-file-and-rename. Never sees plaintext.
+- `storage/vault_directory.dart` — the `path_provider` seam. Device-only.
+- `database/app_database.dart` — connection, schema, migrations.
+- `database/document_dao.dart` — the only place that knows column names
+  and row encoding.
+- `database/database_opener.dart` — the SQLCipher seam. Tests substitute
+  in-memory SQLite so the SQL is genuinely exercised.
+- `data_exceptions.dart` — sealed failure hierarchy for this layer.
+
+`sync/` remains an unscheduled placeholder.
+
+### Why blobs and metadata are stored separately
+
+Document bytes never enter the database, so listing a vault of hundreds
+of documents touches no ciphertext and a database dump can never contain
+a document. Both halves are encrypted regardless — metadata is sensitive
+on its own, since a title alone can say plenty.
