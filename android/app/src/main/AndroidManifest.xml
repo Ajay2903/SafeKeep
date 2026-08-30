@@ -1,4 +1,14 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Scanning documents with the device camera. -->
+    <uses-permission android:name="android.permission.CAMERA"/>
+
+    <!-- Declared not-required so the app still installs on devices with
+         no camera; scanning is simply unavailable there and importing a
+         file still works. -->
+    <uses-feature
+        android:name="android.hardware.camera"
+        android:required="false"/>
+
     <application
         android:label="${appName}"
         android:name="${applicationName}"

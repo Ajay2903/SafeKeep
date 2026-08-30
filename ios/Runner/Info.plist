@@ -9,6 +9,8 @@
 	</array>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
+	<key>NSCameraUsageDescription</key>
+	<string>SafeKeep uses the camera to scan documents into your vault. Scans are encrypted on this device and are never uploaded.</string>
 	<key>CFBundleDisplayName</key>
 	<string>$(FLAVOR_APP_NAME)</string>
 	<key>CFBundleExecutable</key>

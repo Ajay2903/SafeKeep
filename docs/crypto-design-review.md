@@ -66,7 +66,9 @@ constant matters cryptographically its structure is given exactly.
 4. **Supply-chain compromise of the crypto library or toolchain.**
 5. **Malicious app updates.** The user trusts the binary they installed.
 6. **Screen capture, clipboard, accessibility-service scraping** of
-   decrypted content once displayed.
+   decrypted content once displayed. (Screenshots and the app-switcher
+   snapshot *are* blocked on both platforms, but that is a hardening
+   measure, not a defence against a compromised OS.)
 7. **Traffic analysis / metadata leakage from blob sizes.** Ciphertext
    length reveals plaintext length (see *Known weaknesses*).
 
@@ -466,12 +468,25 @@ Critique of the AAD encoding itself is welcome.
 4. **No passphrase strength policy is enforced.** Since the KDF cost is
    the only barrier, a weak passphrase defeats the entire design. Nothing
    currently prevents a 4-character passphrase.
-5. **Ciphertext length reveals plaintext length exactly.** No padding.
-6. **Memory zeroization is best-effort and the passphrase cannot be wiped
+5. **Document scanning writes plaintext to disk, briefly.** Both
+   platforms' document scanners are OS components that write captured
+   pages to app-private storage and return file paths; neither exposes an
+   API returning bytes. The app reads the file, encrypts it, and deletes
+   the scanner's temporary files immediately — but deletion on flash does
+   not reliably erase, so an unencrypted page may persist in unallocated
+   blocks until those blocks are reused. This is the only path in the
+   application where plaintext reaches disk at all. It is a consequence
+   of using the platform scanner rather than a design choice, and there
+   is no obvious way to close it without shipping a custom camera and
+   edge-detection pipeline, which would be far more code to get wrong.
+   **Is that trade the right one, and is there a mitigation being
+   missed?**
+6. **Ciphertext length reveals plaintext length exactly.** No padding.
+7. **Memory zeroization is best-effort and the passphrase cannot be wiped
    at all** (§4.5).
-7. **No key rotation mechanism.** Changing the passphrase would require
+8. **No key rotation mechanism.** Changing the passphrase would require
    re-encrypting every document; not implemented.
-8. **The verification value is an offline guessing oracle** (§3.3) —
+9. **The verification value is an offline guessing oracle** (§3.3) —
    believed inherent, but flagged in case a better construction exists.
 
 ---

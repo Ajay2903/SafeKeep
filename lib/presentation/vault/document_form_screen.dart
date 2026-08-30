@@ -34,6 +34,7 @@ class DocumentFormScreen extends StatefulWidget {
     required this.submitLabel,
     this.initial,
     this.fileSummary,
+    this.suggestedTitle,
     super.key,
   });
 
@@ -48,6 +49,11 @@ class DocumentFormScreen extends StatefulWidget {
   /// A short description of the file being imported, shown so the user
   /// can confirm they picked the right one before naming it.
   final String? fileSummary;
+
+  /// Pre-filled title for a new document, e.g. an imported file's name
+  /// minus its extension. Empty for a scan, which has no useful name to
+  /// borrow — better a blank field than "scan_20260826".
+  final String? suggestedTitle;
 
   @override
   State<DocumentFormScreen> createState() => _DocumentFormScreenState();
@@ -67,7 +73,9 @@ class _DocumentFormScreenState extends State<DocumentFormScreen> {
   void initState() {
     super.initState();
     final initial = widget.initial;
-    _titleController = TextEditingController(text: initial?.title ?? '');
+    _titleController = TextEditingController(
+      text: initial?.title ?? widget.suggestedTitle ?? '',
+    );
     _notesController = TextEditingController(text: initial?.notes ?? '');
     _category = initial?.category ?? DocumentCategory.identity;
     _tags = List<String>.from(initial?.tags ?? const []);

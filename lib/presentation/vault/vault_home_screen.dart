@@ -5,8 +5,11 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:safekeep/core/constants/app_motion.dart';
+import 'package:safekeep/core/constants/app_shape.dart';
 import 'package:safekeep/core/constants/app_spacing.dart';
+import 'package:safekeep/core/theme/app_colors.dart';
 import 'package:safekeep/data/mime_types.dart';
+import 'package:safekeep/data/scanning/document_scanner.dart';
 import 'package:safekeep/domain/models/document.dart';
 import 'package:safekeep/domain/repositories/document_repository.dart';
 import 'package:safekeep/presentation/app/vault_session_cubit.dart';
@@ -21,9 +24,14 @@ import 'package:safekeep/presentation/widgets/vault_mark.dart';
 
 /// The vault's main surface: search, filter, and the document list.
 class VaultHomeScreen extends StatelessWidget {
-  const VaultHomeScreen({required this.repository, super.key});
+  const VaultHomeScreen({
+    required this.repository,
+    required this.scanner,
+    super.key,
+  });
 
   final DocumentRepository repository;
+  final DocumentScanner scanner;
 
   @override
   Widget build(BuildContext context) {
@@ -33,15 +41,16 @@ class VaultHomeScreen extends StatelessWidget {
         unawaited(cubit.load());
         return cubit;
       },
-      child: _VaultHomeView(repository: repository),
+      child: _VaultHomeView(repository: repository, scanner: scanner),
     );
   }
 }
 
 class _VaultHomeView extends StatefulWidget {
-  const _VaultHomeView({required this.repository});
+  const _VaultHomeView({required this.repository, required this.scanner});
 
   final DocumentRepository repository;
+  final DocumentScanner scanner;
 
   @override
   State<_VaultHomeView> createState() => _VaultHomeViewState();
@@ -56,6 +65,55 @@ class _VaultHomeViewState extends State<_VaultHomeView> {
     super.dispose();
   }
 
+  /// Offers the two ways bytes can enter the vault.
+  Future<void> _addDocument() async {
+    final source = await showModalBottomSheet<_AddSource>(
+      context: context,
+      showDragHandle: true,
+      builder: (_) => const _AddSourceSheet(),
+    );
+    if (source == null || !mounted) return;
+
+    switch (source) {
+      case _AddSource.scan:
+        await _scan();
+      case _AddSource.import:
+        await _import();
+    }
+  }
+
+  /// Scan with the camera. The scanner is just another source of bytes:
+  /// from here on the path is identical to importing a file.
+  Future<void> _scan() async {
+    final ScannedDocument? scan;
+    try {
+      scan = await widget.scanner.scan();
+    } on DocumentScanException catch (error) {
+      if (mounted) {
+        _showMessage(
+          error.isPermissionDenied
+              ? 'Camera access is needed to scan. You can enable it in '
+                    'Settings.'
+              : 'The scan could not be completed.',
+        );
+      }
+      return;
+    }
+    // Null means the user backed out of the scanner, which is normal.
+    if (scan == null || !mounted) return;
+
+    await _saveBytes(
+      bytes: scan.bytes,
+      mimeType: scan.mimeType,
+      suggestedTitle: '',
+      summary: scan.pageCount == 1
+          ? 'Scanned document · ${formatFileSize(scan.bytes.length)}'
+          : '${scan.pageCount} scanned pages · '
+                '${formatFileSize(scan.bytes.length)}',
+    );
+  }
+
+  /// Import an existing PDF or photo from the device.
   Future<void> _import() async {
     final file = await FilePicker.pickFile(
       type: FileType.custom,
@@ -75,12 +133,31 @@ class _VaultHomeViewState extends State<_VaultHomeView> {
     }
     if (!mounted) return;
 
+    await _saveBytes(
+      bytes: bytes,
+      mimeType: MimeTypes.forFileName(file.name),
+      suggestedTitle: MimeTypes.titleFromFileName(file.name),
+      summary: '${file.name} · ${formatFileSize(bytes.length)}',
+    );
+  }
+
+  /// The single encrypt-and-store path both sources feed into.
+  ///
+  /// Kept in one place so scanning and importing cannot diverge — a
+  /// document is a document once it is bytes, however it was captured.
+  Future<void> _saveBytes({
+    required Uint8List bytes,
+    required String mimeType,
+    required String suggestedTitle,
+    required String summary,
+  }) async {
     final result = await Navigator.of(context).push<DocumentFormResult>(
       MaterialPageRoute(
         builder: (_) => DocumentFormScreen(
           title: 'Add document',
           submitLabel: 'Encrypt and save',
-          fileSummary: '${file.name} · ${formatFileSize(bytes.length)}',
+          fileSummary: summary,
+          suggestedTitle: suggestedTitle,
         ),
       ),
     );
@@ -91,7 +168,7 @@ class _VaultHomeViewState extends State<_VaultHomeView> {
         bytes: bytes,
         title: result.title,
         category: result.category,
-        mimeType: MimeTypes.forFileName(file.name),
+        mimeType: mimeType,
         tags: result.tags,
         notes: result.notes,
         expiresAt: result.expiresAt,
@@ -144,7 +221,7 @@ class _VaultHomeViewState extends State<_VaultHomeView> {
         ],
       ),
       floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => unawaited(_import()),
+        onPressed: () => unawaited(_addDocument()),
         icon: const Icon(Icons.add),
         label: const Text('Add'),
       ),
@@ -154,7 +231,7 @@ class _VaultHomeViewState extends State<_VaultHomeView> {
             return const Center(child: CircularProgressIndicator());
           }
           if (state.isVaultEmpty) {
-            return _EmptyVault(onImport: () => unawaited(_import()));
+            return _EmptyVault(onImport: () => unawaited(_addDocument()));
           }
 
           return Column(
@@ -174,6 +251,132 @@ class _VaultHomeViewState extends State<_VaultHomeView> {
             ],
           );
         },
+      ),
+    );
+  }
+}
+
+/// Where a document's bytes come from.
+enum _AddSource { scan, import }
+
+class _AddSourceSheet extends StatelessWidget {
+  const _AddSourceSheet();
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    // Scrollable rather than a bare Column: the sheet's natural height
+    // exceeds a short screen in landscape or with large text sizes, and
+    // a Column would simply overflow rather than letting the user reach
+    // the second option.
+    return SafeArea(
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.fromLTRB(
+          AppSpacing.lg,
+          0,
+          AppSpacing.lg,
+          AppSpacing.lg,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Add a document', style: theme.textTheme.titleMedium),
+            const SizedBox(height: AppSpacing.lg),
+            _AddSourceTile(
+              icon: Icons.document_scanner_outlined,
+              title: 'Scan with camera',
+              subtitle:
+                  'Edges detected and cropped automatically. '
+                  'Multiple pages become one PDF.',
+              onTap: () => Navigator.of(context).pop(_AddSource.scan),
+            ),
+            const SizedBox(height: AppSpacing.sm),
+            _AddSourceTile(
+              icon: Icons.folder_open_outlined,
+              title: 'Import a file',
+              subtitle: 'Choose a PDF or photo already on this device.',
+              onTap: () => Navigator.of(context).pop(_AddSource.import),
+            ),
+            const SizedBox(height: AppSpacing.md),
+            Row(
+              children: [
+                Icon(
+                  Icons.lock_outline,
+                  size: 14,
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+                const SizedBox(width: AppSpacing.sm),
+                Expanded(
+                  child: Text(
+                    'Either way, it is encrypted before it is stored.',
+                    style: theme.textTheme.bodySmall,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _AddSourceTile extends StatelessWidget {
+  const _AddSourceTile({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return Material(
+      color: theme.colorScheme.surface,
+      borderRadius: BorderRadius.circular(AppShape.radiusLarge),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(AppShape.radiusLarge),
+        child: Container(
+          padding: const EdgeInsets.all(AppSpacing.md),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(AppShape.radiusLarge),
+            border: Border.all(color: theme.colorScheme.outline),
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.primaryContainer,
+                  borderRadius: BorderRadius.circular(AppShape.radiusMedium),
+                ),
+                child: Icon(icon, size: 20, color: AppColors.accent),
+              ),
+              const SizedBox(width: AppSpacing.md),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(title, style: theme.textTheme.titleSmall),
+                    const SizedBox(height: 2),
+                    Text(subtitle, style: theme.textTheme.bodySmall),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -312,7 +515,7 @@ class _EmptyVault extends StatelessWidget {
     final theme = Theme.of(context);
 
     return Center(
-      child: Padding(
+      child: SingleChildScrollView(
         padding: const EdgeInsets.all(AppSpacing.xl),
         child: Column(
           mainAxisSize: MainAxisSize.min,

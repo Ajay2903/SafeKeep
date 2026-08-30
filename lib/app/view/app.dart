@@ -7,6 +7,8 @@ import 'package:safekeep/core/theme/app_theme.dart';
 import 'package:safekeep/data/database/app_database.dart';
 import 'package:safekeep/data/database/database_opener.dart';
 import 'package:safekeep/data/database/document_dao.dart';
+import 'package:safekeep/data/scanning/cunning_document_scanner_adapter.dart';
+import 'package:safekeep/data/scanning/document_scanner.dart';
 import 'package:safekeep/data/storage/document_file_storage.dart';
 import 'package:safekeep/data/vault_document_repository.dart';
 import 'package:safekeep/domain/repositories/document_repository.dart';
@@ -34,6 +36,7 @@ class App extends StatelessWidget {
     this.biometricGate,
     this.database,
     this.repository,
+    this.scanner,
     super.key,
   });
 
@@ -55,6 +58,7 @@ class App extends StatelessWidget {
   final BiometricGate? biometricGate;
   final AppDatabase? database;
   final DocumentRepository? repository;
+  final DocumentScanner? scanner;
 
   @override
   Widget build(BuildContext context) {
@@ -103,7 +107,10 @@ class App extends StatelessWidget {
         darkTheme: AppTheme.dark,
         localizationsDelegates: AppLocalizations.localizationsDelegates,
         supportedLocales: AppLocalizations.supportedLocales,
-        home: VaultGate(repository: vault),
+        home: VaultGate(
+          repository: vault,
+          scanner: scanner ?? const CunningDocumentScannerAdapter(),
+        ),
       ),
     );
   }

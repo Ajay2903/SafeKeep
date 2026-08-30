@@ -38,9 +38,27 @@ Implemented, and composed into a working vault:
   and row encoding.
 - `database/database_opener.dart` — the SQLCipher seam. Tests substitute
   in-memory SQLite so the SQL is genuinely exercised.
+- `scanning/` — `DocumentScanner`, an interface over the platform
+  scanner, with the `cunning_document_scanner` adapter behind it. The
+  interface exists because scanner quality can only be judged on real
+  hardware with a real document: if the output disappoints, swapping the
+  package costs one class rather than unpicking scanning from the UI and
+  the vault. It also makes the whole scan flow testable without a camera.
+- `mime_types.dart` — extension-to-content-type allowlist.
 - `data_exceptions.dart` — sealed failure hierarchy for this layer.
 
 `sync/` remains an unscheduled placeholder.
+
+### Scanning is the one place plaintext touches disk
+
+The platform scanners write captured pages to app-private storage and
+return paths; no bytes-returning API exists. The adapter reads the file,
+then deletes the scanner's temporaries in a `finally` so cleanup runs
+even when reading fails. The window between capture and deletion cannot
+be closed without shipping a custom camera pipeline, and deletion on
+flash does not reliably erase — so this is documented as a known
+limitation rather than treated as solved. See the known-weaknesses
+section of `docs/crypto-design-review.md`.
 
 ### Why blobs and metadata are stored separately
 
