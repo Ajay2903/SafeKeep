@@ -12,6 +12,7 @@ import 'package:safekeep/presentation/app/vault_session_state.dart';
 import 'package:safekeep/presentation/widgets/fade_slide_in.dart';
 import 'package:safekeep/presentation/widgets/passphrase_field.dart';
 import 'package:safekeep/presentation/widgets/vault_mark.dart';
+import 'package:safekeep/security/auth/biometric_gate.dart';
 
 /// The returning-user screen: biometric unlock, with passphrase fallback.
 ///
@@ -90,6 +91,26 @@ class _UnlockScreenState extends State<UnlockScreen>
     unawaited(context.read<VaultSessionCubit>().unlockWithBiometrics());
   }
 
+  /// Label for the unlock button, matching what the device will prompt
+  /// with rather than what the feature is called internally.
+  String get _unlockLabel => switch (widget.state.capability) {
+    BiometricCapability.fingerprint => 'Unlock with fingerprint',
+    BiometricCapability.face => 'Unlock with face',
+    BiometricCapability.iris => 'Unlock with iris scan',
+    BiometricCapability.deviceCredential => 'Unlock with screen lock',
+    // Reached when the capability could not be determined but the gate
+    // still reports itself usable. A neutral label beats a wrong one.
+    BiometricCapability.none => 'Unlock',
+  };
+
+  IconData get _unlockIcon => switch (widget.state.capability) {
+    BiometricCapability.fingerprint => Icons.fingerprint,
+    BiometricCapability.face => Icons.face_outlined,
+    BiometricCapability.iris => Icons.visibility_outlined,
+    BiometricCapability.deviceCredential => Icons.pattern_outlined,
+    BiometricCapability.none => Icons.lock_open_outlined,
+  };
+
   void _submitPassphrase() {
     final passphrase = _passphraseController.text;
     if (passphrase.isEmpty) return;
@@ -159,8 +180,12 @@ class _UnlockScreenState extends State<UnlockScreen>
                     _promptedOnce = false;
                     _tryBiometrics();
                   },
-                  icon: const Icon(Icons.fingerprint, size: 22),
-                  label: const Text('Unlock with biometrics'),
+                  // Named after what the device will actually ask for.
+                  // "Unlock with biometrics" on a phone that then shows a
+                  // pattern grid is the app being wrong about the user's
+                  // own hardware.
+                  icon: Icon(_unlockIcon, size: 22),
+                  label: Text(_unlockLabel),
                 ),
               if (widget.state.biometricsAvailable && !_showPassphraseEntry)
                 Padding(

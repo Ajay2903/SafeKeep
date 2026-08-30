@@ -73,6 +73,7 @@ class _FakeKeyManager implements KeyManager {
 
 class _FakeBiometricGate implements BiometricGate {
   bool available = true;
+  BiometricCapability reportedCapability = BiometricCapability.fingerprint;
 
   /// When set, authenticate() throws instead of returning — simulating a
   /// device with nothing enrolled, or a locked-out sensor.
@@ -80,6 +81,13 @@ class _FakeBiometricGate implements BiometricGate {
 
   @override
   Future<bool> isAvailable() async => available;
+
+  @override
+  Future<BiometricCapability> capability() async =>
+      // A gate that reports nothing available cannot also claim a
+      // fingerprint; keeping the fake coherent stops tests asserting a
+      // state the real gate could never produce.
+      available ? reportedCapability : BiometricCapability.none;
 
   @override
   Future<bool> authenticate({required String reason}) async {
@@ -144,7 +152,12 @@ void main() {
       build: build,
       setUp: () => keyManager.initialized = true,
       act: (cubit) => cubit.checkStatus(),
-      expect: () => [const VaultLocked(biometricsAvailable: true)],
+      expect: () => [
+        const VaultLocked(
+          biometricsAvailable: true,
+          capability: BiometricCapability.fingerprint,
+        ),
+      ],
     );
 
     blocTest<VaultSessionCubit, VaultSessionState>(
@@ -198,9 +211,46 @@ void main() {
       act: (cubit) => cubit.unlockWithPassphrase('wrong'),
       expect: () => [
         const VaultUnlocking(),
-        const VaultLocked(biometricsAvailable: true, lastAttemptFailed: true),
+        const VaultLocked(
+          biometricsAvailable: true,
+          lastAttemptFailed: true,
+          capability: BiometricCapability.fingerprint,
+        ),
       ],
       verify: (_) => expect(database.isOpen, isFalse),
+    );
+  });
+
+  group('capability reporting', () {
+    // The unlock button is labelled from this. A device with no
+    // fingerprint enrolled still authenticates via the screen lock, so
+    // calling that button "biometrics" would be untrue.
+    blocTest<VaultSessionCubit, VaultSessionState>(
+      'reports the screen lock when no biometric is enrolled',
+      build: build,
+      setUp: () {
+        keyManager.initialized = true;
+        gate.reportedCapability = BiometricCapability.deviceCredential;
+      },
+      act: (cubit) => cubit.checkStatus(),
+      verify: (cubit) => expect(
+        (cubit.state as VaultLocked).capability,
+        BiometricCapability.deviceCredential,
+      ),
+    );
+
+    blocTest<VaultSessionCubit, VaultSessionState>(
+      'reports fingerprint when one is enrolled',
+      build: build,
+      setUp: () {
+        keyManager.initialized = true;
+        gate.reportedCapability = BiometricCapability.fingerprint;
+      },
+      act: (cubit) => cubit.checkStatus(),
+      verify: (cubit) => expect(
+        (cubit.state as VaultLocked).capability,
+        BiometricCapability.fingerprint,
+      ),
     );
   });
 
@@ -283,7 +333,12 @@ void main() {
       act: (cubit) => cubit.unlockWithBiometrics(),
       // lastAttemptFailed stays false: the user dismissed the sheet,
       // which is not the same as getting it wrong.
-      expect: () => [const VaultLocked(biometricsAvailable: true)],
+      expect: () => [
+        const VaultLocked(
+          biometricsAvailable: true,
+          capability: BiometricCapability.fingerprint,
+        ),
+      ],
     );
   });
 
@@ -298,7 +353,10 @@ void main() {
       expect: () => [
         const VaultSettingUp(),
         const VaultUnlocked(),
-        const VaultLocked(biometricsAvailable: true),
+        const VaultLocked(
+          biometricsAvailable: true,
+          capability: BiometricCapability.fingerprint,
+        ),
       ],
       verify: (_) {
         expect(keyManager.lockCalls, 1);

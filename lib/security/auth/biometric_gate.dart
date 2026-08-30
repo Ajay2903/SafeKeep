@@ -14,6 +14,14 @@ abstract interface class BiometricGate {
   /// this device.
   Future<bool> isAvailable();
 
+  /// What the device will actually prompt with.
+  ///
+  /// Used only to label the unlock button truthfully. A device with no
+  /// fingerprint enrolled still authenticates — via the screen lock — so
+  /// calling that button "Unlock with biometrics" tells the user
+  /// something false about their own phone.
+  Future<BiometricCapability> capability();
+
   /// Prompts the user to authenticate.
   ///
   /// Returns `true` only on a successful, fresh authentication — never
@@ -26,6 +34,24 @@ abstract interface class BiometricGate {
   /// distinguished from a dismissal because the user can act on them and
   /// needs to be told, whereas a dismissal was deliberate.
   Future<bool> authenticate({required String reason});
+}
+
+/// What kind of authentication the device will present.
+///
+/// Deliberately not a list of every enrolled method: the unlock screen
+/// needs one label and one icon, so this reports the single most
+/// representative option rather than making the UI choose.
+enum BiometricCapability {
+  fingerprint,
+  face,
+  iris,
+
+  /// No biometric is enrolled, but a PIN, pattern, or password is set —
+  /// so authentication still works, just not with a body part.
+  deviceCredential,
+
+  /// Nothing is available. The passphrase is the only way in.
+  none,
 }
 
 /// Biometric authentication could not be attempted.

@@ -71,6 +71,10 @@ class VaultSessionCubit extends Cubit<VaultSessionState> {
   /// platform call.
   bool _biometricsAvailable = false;
 
+  /// Cached so the synchronous [lock] can label the unlock button
+  /// correctly without awaiting the platform gate.
+  BiometricCapability _capability = BiometricCapability.none;
+
   /// Determines what to show on launch.
   Future<void> checkStatus() async {
     final initialized = await _keyManager.isInitialized();
@@ -151,7 +155,15 @@ class VaultSessionCubit extends Cubit<VaultSessionState> {
     _autoLock.dispose();
     _keyManager.lock();
     if (!isClosed) {
-      emit(VaultLocked(biometricsAvailable: _biometricsAvailable));
+      // Both values come from the cache rather than being re-read:
+      // lock() is deliberately synchronous so the key is cleared without
+      // awaiting anything, which rules out calling the async gate here.
+      emit(
+        VaultLocked(
+          biometricsAvailable: _biometricsAvailable,
+          capability: _capability,
+        ),
+      );
     }
 
     // Deliberately not awaited, for the reason above. Failure to close is
@@ -189,21 +201,26 @@ class VaultSessionCubit extends Cubit<VaultSessionState> {
     String? biometricMessage,
   }) async {
     _biometricsAvailable = await _biometricGate.isAvailable();
+    _capability = await _biometricGate.capability();
     if (isClosed) return;
     emit(
       VaultLocked(
         biometricsAvailable: _biometricsAvailable,
         lastAttemptFailed: lastAttemptFailed,
         biometricMessage: biometricMessage,
+        capability: _capability,
       ),
     );
   }
 
   Future<void> _openSession() async {
     await _database.open(await _keyManager.databaseKey());
-    // Cache availability while unlocked so the synchronous lock() below
-    // has a current value to report without awaiting.
+    // Cache both while unlocked so the synchronous lock() below has
+    // current values to report without awaiting. Availability alone is
+    // not enough: without the capability, locking would fall back to a
+    // generic "Unlock" label on a device that has a fingerprint.
     _biometricsAvailable = await _biometricGate.isAvailable();
+    _capability = await _biometricGate.capability();
     _autoLock.recordInteraction();
     if (!isClosed) emit(const VaultUnlocked());
   }

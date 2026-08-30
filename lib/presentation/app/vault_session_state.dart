@@ -1,4 +1,5 @@
 import 'package:meta/meta.dart';
+import 'package:safekeep/security/auth/biometric_gate.dart';
 
 /// The app's top-level state: whether a vault exists, and whether it is
 /// open.
@@ -43,6 +44,7 @@ final class VaultLocked extends VaultSessionState {
     this.biometricsAvailable = false,
     this.lastAttemptFailed = false,
     this.biometricMessage,
+    this.capability = BiometricCapability.none,
   });
 
   /// Whether to offer the biometric prompt at all. False on devices with
@@ -65,16 +67,26 @@ final class VaultLocked extends VaultSessionState {
   /// someone is to guessing their way in.
   final String? biometricMessage;
 
+  /// What the device will actually prompt with, so the unlock button can
+  /// name it accurately instead of saying "biometrics" to someone whose
+  /// phone is about to ask for a pattern.
+  final BiometricCapability capability;
+
   @override
   bool operator ==(Object other) =>
       other is VaultLocked &&
       other.biometricsAvailable == biometricsAvailable &&
       other.lastAttemptFailed == lastAttemptFailed &&
-      other.biometricMessage == biometricMessage;
+      other.biometricMessage == biometricMessage &&
+      other.capability == capability;
 
   @override
-  int get hashCode =>
-      Object.hash(biometricsAvailable, lastAttemptFailed, biometricMessage);
+  int get hashCode => Object.hash(
+    biometricsAvailable,
+    lastAttemptFailed,
+    biometricMessage,
+    capability,
+  );
 }
 
 /// Verifying a passphrase. Argon2id again, hence its own state.

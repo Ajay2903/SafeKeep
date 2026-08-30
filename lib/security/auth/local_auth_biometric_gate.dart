@@ -55,6 +55,40 @@ class LocalAuthBiometricGate implements BiometricGate {
   }
 
   @override
+  Future<BiometricCapability> capability() async {
+    try {
+      final enrolled = await _localAuth.getAvailableBiometrics();
+
+      // Ordered by how recognisably a user would name it. `strong` and
+      // `weak` are Android's assurance classes rather than modalities —
+      // they say nothing about what the sensor is — so a device
+      // reporting only those falls through to the generic label rather
+      // than being guessed at.
+      if (enrolled.contains(BiometricType.face)) {
+        return BiometricCapability.face;
+      }
+      if (enrolled.contains(BiometricType.fingerprint)) {
+        return BiometricCapability.fingerprint;
+      }
+      if (enrolled.contains(BiometricType.iris)) {
+        return BiometricCapability.iris;
+      }
+
+      // Nothing biometric is usable, but the device may still have a
+      // screen lock — which is what the prompt will actually ask for.
+      return await _localAuth.isDeviceSupported()
+          ? BiometricCapability.deviceCredential
+          : BiometricCapability.none;
+    } on PlatformException catch (error) {
+      AppLogger.instance.warning(
+        'Biometric capability unknown: '
+        '${error.code}',
+      );
+      return BiometricCapability.none;
+    }
+  }
+
+  @override
   Future<bool> authenticate({required String reason}) async {
     try {
       return await _localAuth.authenticate(

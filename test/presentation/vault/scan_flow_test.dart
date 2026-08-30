@@ -71,6 +71,10 @@ class _AvailableGate implements BiometricGate {
   Future<bool> isAvailable() async => true;
 
   @override
+  Future<BiometricCapability> capability() async =>
+      BiometricCapability.fingerprint;
+
+  @override
   Future<bool> authenticate({required String reason}) async => true;
 }
 
@@ -164,7 +168,10 @@ class _RecordingRepository implements DocumentRepository {
 
 Future<void> unlock(WidgetTester tester) async {
   await tester.runAsync(() async {
-    await tester.tap(find.text('Unlock with biometrics'));
+    // Found by icon, not label: the label now names whatever the device
+    // will actually prompt with, so asserting one string here would tie
+    // the test to a single device configuration.
+    await tester.tap(find.byIcon(Icons.fingerprint));
   });
   for (var attempt = 0; attempt < 40; attempt++) {
     await tester.runAsync(

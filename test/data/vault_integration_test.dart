@@ -49,6 +49,10 @@ class _FakeBiometricGate implements BiometricGate {
   Future<bool> isAvailable() async => true;
 
   @override
+  Future<BiometricCapability> capability() async =>
+      BiometricCapability.fingerprint;
+
+  @override
   Future<bool> authenticate({required String reason}) async => succeeds;
 }
 
