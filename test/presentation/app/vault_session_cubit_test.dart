@@ -40,8 +40,14 @@ class _FakeKeyManager implements KeyManager {
     return passphraseCorrect;
   }
 
+  /// When set, unlockWithBiometrics throws instead of returning —
+  /// mirroring a gate that could not run at all.
+  String? unavailableMessage;
+
   @override
   Future<bool> unlockWithBiometrics() async {
+    final failure = unavailableMessage;
+    if (failure != null) throw BiometricUnavailableException(failure);
     unlocked = biometricUnlockSucceeds;
     return biometricUnlockSucceeds;
   }
@@ -68,11 +74,19 @@ class _FakeKeyManager implements KeyManager {
 class _FakeBiometricGate implements BiometricGate {
   bool available = true;
 
+  /// When set, authenticate() throws instead of returning — simulating a
+  /// device with nothing enrolled, or a locked-out sensor.
+  String? unavailableMessage;
+
   @override
   Future<bool> isAvailable() async => available;
 
   @override
-  Future<bool> authenticate({required String reason}) async => true;
+  Future<bool> authenticate({required String reason}) async {
+    final failure = unavailableMessage;
+    if (failure != null) throw BiometricUnavailableException(failure);
+    return true;
+  }
 }
 
 class _InMemoryOpener implements DatabaseOpener {
@@ -187,6 +201,67 @@ void main() {
         const VaultLocked(biometricsAvailable: true, lastAttemptFailed: true),
       ],
       verify: (_) => expect(database.isOpen, isFalse),
+    );
+  });
+
+  group('biometrics unavailable', () {
+    // A silent failure here is what made a real misconfiguration look
+    // like a dead button: local_auth cannot attach its prompt to a
+    // non-FragmentActivity, the gate swallowed the exception, and
+    // tapping "Unlock with biometrics" simply did nothing.
+    blocTest<VaultSessionCubit, VaultSessionState>(
+      'reports why, instead of failing silently',
+      build: build,
+      setUp: () {
+        keyManager
+          ..initialized = true
+          ..unavailableMessage = 'No fingerprint is set up on this device.';
+      },
+      act: (cubit) async {
+        await cubit.checkStatus();
+        await cubit.unlockWithBiometrics();
+      },
+      verify: (cubit) {
+        final state = cubit.state;
+        expect(state, isA<VaultLocked>());
+        expect(
+          (state as VaultLocked).biometricMessage,
+          'No fingerprint is set up on this device.',
+        );
+      },
+    );
+
+    blocTest<VaultSessionCubit, VaultSessionState>(
+      'stays locked when biometrics cannot run',
+      build: build,
+      setUp: () {
+        keyManager
+          ..initialized = true
+          ..unavailableMessage = 'Locked out.';
+      },
+      act: (cubit) async {
+        await cubit.checkStatus();
+        await cubit.unlockWithBiometrics();
+      },
+      verify: (cubit) => expect(cubit.state, isA<VaultLocked>()),
+    );
+
+    blocTest<VaultSessionCubit, VaultSessionState>(
+      'a dismissed prompt carries no message',
+      build: build,
+      setUp: () {
+        keyManager
+          ..initialized = true
+          ..biometricUnlockSucceeds = false;
+      },
+      act: (cubit) async {
+        await cubit.checkStatus();
+        await cubit.unlockWithBiometrics();
+      },
+      verify: (cubit) {
+        // Dismissing is deliberate; explaining it would be noise.
+        expect((cubit.state as VaultLocked).biometricMessage, isNull);
+      },
     );
   });
 

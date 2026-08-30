@@ -9,6 +9,8 @@
 	</array>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
+	<key>NSFaceIDUsageDescription</key>
+	<string>SafeKeep uses Face ID to unlock your vault. Your documents stay encrypted on this device.</string>
 	<key>NSCameraUsageDescription</key>
 	<string>SafeKeep uses the camera to scan documents into your vault. Scans are encrypted on this device and are never uploaded.</string>
 	<key>CFBundleDisplayName</key>

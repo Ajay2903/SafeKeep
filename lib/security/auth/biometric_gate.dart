@@ -14,7 +14,28 @@ abstract interface class BiometricGate {
   /// this device.
   Future<bool> isAvailable();
 
-  /// Prompts the user to authenticate. Returns `true` only on a successful,
-  /// fresh authentication — never cache or bypass this check.
+  /// Prompts the user to authenticate.
+  ///
+  /// Returns `true` only on a successful, fresh authentication — never
+  /// cache or bypass this check. Returns `false` when the user dismisses
+  /// the prompt, which is a normal action rather than a failure.
+  ///
+  /// Throws [BiometricUnavailableException] when authentication could not
+  /// be attempted at all: nothing enrolled, hardware unavailable, or the
+  /// sensor temporarily locked out after repeated failures. These are
+  /// distinguished from a dismissal because the user can act on them and
+  /// needs to be told, whereas a dismissal was deliberate.
   Future<bool> authenticate({required String reason});
+}
+
+/// Biometric authentication could not be attempted.
+///
+/// Carries a message written for the user, not a platform error string.
+class BiometricUnavailableException implements Exception {
+  const BiometricUnavailableException(this.message);
+
+  final String message;
+
+  @override
+  String toString() => 'BiometricUnavailableException: $message';
 }

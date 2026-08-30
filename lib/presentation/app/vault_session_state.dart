@@ -42,6 +42,7 @@ final class VaultLocked extends VaultSessionState {
   const VaultLocked({
     this.biometricsAvailable = false,
     this.lastAttemptFailed = false,
+    this.biometricMessage,
   });
 
   /// Whether to offer the biometric prompt at all. False on devices with
@@ -56,14 +57,24 @@ final class VaultLocked extends VaultSessionState {
   /// than it tells the owner.
   final bool lastAttemptFailed;
 
+  /// Why biometric unlock could not be attempted, if it could not.
+  ///
+  /// Distinct from [lastAttemptFailed], which is about a rejected
+  /// passphrase. This one is safe to show in full: it describes the
+  /// device's configuration, not anything about the vault or how close
+  /// someone is to guessing their way in.
+  final String? biometricMessage;
+
   @override
   bool operator ==(Object other) =>
       other is VaultLocked &&
       other.biometricsAvailable == biometricsAvailable &&
-      other.lastAttemptFailed == lastAttemptFailed;
+      other.lastAttemptFailed == lastAttemptFailed &&
+      other.biometricMessage == biometricMessage;
 
   @override
-  int get hashCode => Object.hash(biometricsAvailable, lastAttemptFailed);
+  int get hashCode =>
+      Object.hash(biometricsAvailable, lastAttemptFailed, biometricMessage);
 }
 
 /// Verifying a passphrase. Argon2id again, hence its own state.

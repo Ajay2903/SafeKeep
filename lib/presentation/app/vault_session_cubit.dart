@@ -101,12 +101,21 @@ class VaultSessionCubit extends Cubit<VaultSessionState> {
 
   /// Unlocks with biometrics or the device credential.
   Future<void> unlockWithBiometrics() async {
-    final unlocked = await _keyManager.unlockWithBiometrics();
+    final bool unlocked;
+    try {
+      unlocked = await _keyManager.unlockWithBiometrics();
+    } on BiometricUnavailableException catch (error) {
+      // Biometrics could not even be attempted. Say why: the user can
+      // act on "nothing is enrolled" or "locked out", and silence here
+      // is what made this look like a dead button.
+      if (!isClosed) await _emitLocked(biometricMessage: error.message);
+      return;
+    }
     if (isClosed) return;
 
     if (!unlocked) {
-      // A cancelled prompt is not a failed attempt — the user simply
-      // dismissed it, and flagging it as a failure would be alarming.
+      // A dismissed prompt is not a failed attempt — the user simply
+      // closed it, and flagging it as a failure would be alarming.
       await _emitLocked();
       return;
     }
@@ -175,13 +184,17 @@ class VaultSessionCubit extends Cubit<VaultSessionState> {
   /// at launch: a user can enrol or remove a fingerprint while the app is
   /// running, and a stale value would either hide the prompt from someone
   /// who just set one up or offer one that no longer works.
-  Future<void> _emitLocked({bool lastAttemptFailed = false}) async {
+  Future<void> _emitLocked({
+    bool lastAttemptFailed = false,
+    String? biometricMessage,
+  }) async {
     _biometricsAvailable = await _biometricGate.isAvailable();
     if (isClosed) return;
     emit(
       VaultLocked(
         biometricsAvailable: _biometricsAvailable,
         lastAttemptFailed: lastAttemptFailed,
+        biometricMessage: biometricMessage,
       ),
     );
   }

@@ -2,9 +2,17 @@ package com.ajaytibrewal.safekeep
 
 import android.os.Bundle
 import android.view.WindowManager
-import io.flutter.embedding.android.FlutterActivity
+import io.flutter.embedding.android.FlutterFragmentActivity
 
-class MainActivity : FlutterActivity() {
+// FlutterFragmentActivity, not FlutterActivity.
+//
+// local_auth shows the system BiometricPrompt, which is a Fragment and
+// can only attach to a FragmentActivity. Against a plain FlutterActivity
+// the plugin fails with a `no_fragment_activity` PlatformException — and
+// because that surfaced as a caught exception rather than a visible
+// error, the symptom was simply that tapping "Unlock with biometrics"
+// did nothing at all.
+class MainActivity : FlutterFragmentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         // FLAG_SECURE, set once for the whole activity, does three things

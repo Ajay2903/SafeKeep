@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:safekeep/core/constants/app_motion.dart';
+import 'package:safekeep/core/constants/app_shape.dart';
 import 'package:safekeep/core/constants/app_spacing.dart';
 import 'package:safekeep/core/theme/app_colors.dart';
 import 'package:safekeep/presentation/app/vault_session_cubit.dart';
@@ -63,6 +64,12 @@ class _UnlockScreenState extends State<UnlockScreen>
   @override
   void didUpdateWidget(UnlockScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
+    // If biometrics could not run at all, open the passphrase field
+    // straight away: the user must never be left looking at a screen
+    // whose only button does nothing.
+    if (widget.state.biometricMessage != null && !_showPassphraseEntry) {
+      _showPassphraseEntry = true;
+    }
     if (widget.state.lastAttemptFailed && !oldWidget.state.lastAttemptFailed) {
       unawaited(HapticFeedback.heavyImpact());
       _shake.forward(from: 0);
@@ -139,6 +146,13 @@ class _UnlockScreenState extends State<UnlockScreen>
                     : const SizedBox(width: double.infinity),
               ),
               const Spacer(),
+              if (widget.state.biometricMessage != null)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: AppSpacing.md),
+                  child: _BiometricNotice(
+                    message: widget.state.biometricMessage!,
+                  ),
+                ),
               if (widget.state.biometricsAvailable)
                 FilledButton.icon(
                   onPressed: () {
@@ -239,6 +253,44 @@ class _ErrorBanner extends StatelessWidget {
               ),
             )
           : const SizedBox(width: double.infinity),
+    );
+  }
+}
+
+/// Explains why biometric unlock could not be attempted.
+///
+/// Safe to show in full: it describes the device's configuration, not
+/// anything about the vault or how close anyone is to getting in.
+class _BiometricNotice extends StatelessWidget {
+  const _BiometricNotice({required this.message});
+
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return Container(
+      padding: const EdgeInsets.all(AppSpacing.md),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surface,
+        borderRadius: BorderRadius.circular(AppShape.radiusMedium),
+        border: Border.all(color: theme.colorScheme.outline),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(
+            Icons.info_outline,
+            size: 18,
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+          const SizedBox(width: AppSpacing.md),
+          Expanded(
+            child: Text(message, style: theme.textTheme.bodySmall),
+          ),
+        ],
+      ),
     );
   }
 }

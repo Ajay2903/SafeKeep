@@ -1,3 +1,4 @@
+import 'package:flutter/services.dart';
 import 'package:local_auth/local_auth.dart';
 import 'package:safekeep/core/logging/app_logger.dart';
 import 'package:safekeep/security/auth/biometric_gate.dart';
@@ -26,11 +27,14 @@ import 'package:safekeep/security/auth/biometric_gate.dart';
 /// # Failure handling
 ///
 /// `local_auth` throws `PlatformException` for conditions such as no
-/// enrolled credential or locked-out hardware. Those are treated as
-/// "authentication did not succeed" (`false`) rather than propagating,
-/// because callers cannot act differently on them and a thrown exception
-/// on this path risks surfacing platform detail into logs or UI. The
-/// failure is logged as a bare event with no error object attached.
+/// enrolled credential or locked-out hardware. These are translated into
+/// [BiometricUnavailableException] with a message the user can act on,
+/// and are deliberately distinct from `false`, which means only that the
+/// user dismissed the prompt.
+///
+/// Only the error *code* is logged, never the platform's message: codes
+/// are a fixed vocabulary carrying no device or credential detail, while
+/// messages are free text from the OS.
 // NOTE: needs on-device verification; a real biometric prompt cannot be
 // exercised from a unit test. See ARCHITECTURE.md's manual checklist.
 class LocalAuthBiometricGate implements BiometricGate {
@@ -67,11 +71,38 @@ class LocalAuthBiometricGate implements BiometricGate {
         // ignore: avoid_redundant_argument_values
         persistAcrossBackgrounding: false,
       );
-    } on Exception {
-      // No error object is logged: platform exception messages are not
-      // worth the risk of leaking device or credential detail into logs.
-      AppLogger.instance.warning('Biometric authentication unavailable');
-      return false;
+    } on PlatformException catch (error) {
+      // Only the error *code* is logged, never the platform's message —
+      // codes are a fixed vocabulary and carry no device or credential
+      // detail, whereas messages are free text from the OS.
+      AppLogger.instance.warning('Biometric prompt failed: ${error.code}');
+      throw BiometricUnavailableException(_messageForCode(error.code));
     }
   }
+
+  /// Turns a `local_auth` error code into something the user can act on.
+  ///
+  /// An earlier version caught every exception and returned `false`,
+  /// which made a genuine misconfiguration indistinguishable from the
+  /// user dismissing the prompt: tapping "Unlock with biometrics" simply
+  /// did nothing, with the actual cause visible only in a log nobody was
+  /// reading. Failing quietly on a security control is the wrong default.
+  static String _messageForCode(String code) => switch (code) {
+    'NotEnrolled' =>
+      'No fingerprint or face is set up on this device. '
+          'Add one in your device settings, or unlock with your passphrase.',
+    'NotAvailable' || 'no_fragment_activity' =>
+      'Biometric unlock is not available on this '
+          'device. Use your passphrase instead.',
+    'PasscodeNotSet' =>
+      'Set a screen lock on your device to use '
+          'biometric unlock. Your passphrase still works.',
+    'LockedOut' =>
+      'Too many failed attempts. Biometric unlock is '
+          'temporarily disabled — use your passphrase.',
+    'PermanentlyLockedOut' =>
+      'Biometric unlock is locked. Unlock your '
+          'device with its PIN or password first, then try again.',
+    _ => 'Biometric unlock could not start. Use your passphrase instead.',
+  };
 }
