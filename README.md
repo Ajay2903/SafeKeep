@@ -8,13 +8,13 @@ import your passport, licence, insurance and tax documents; they are
 encrypted on-device and never leave it in readable form. No server, no
 accounts, no telemetry.
 
-> ### 🚧 Status: in active development — Phases 0-2 of 10 complete
+> ### 🚧 Status: in active development — Phases 0-3 of 10 complete
 >
-> **There is a working encrypted vault, and no user interface yet.**
-> Documents can be added, encrypted, stored, listed, opened, and deleted
-> — all through code. Running the app today shows the scaffold's
-> placeholder screen; the vault is exercised through the test suite or a
-> debug harness (see [Trying it](#trying-it)).
+> **The app runs: you can set up a vault, lock it, and unlock it with
+> your fingerprint.** Behind that lock the encrypted storage layer is
+> complete — documents can be added, encrypted, stored, listed, opened
+> and deleted through code — but the screens for managing them are
+> Phase 4.
 >
 > This repository is deliberately being built bottom-up: the security
 > layer first, proven with tests, before any UI is written on top of it.
@@ -56,7 +56,7 @@ lib/
   security/       ← encryption, key management, biometric gate  (Phase 1 ✅)
   data/           ← encrypted blob storage + SQLCipher database (Phase 2 ✅)
   domain/         ← models and repository interfaces            (Phase 2 ✅)
-  presentation/   ← screens, widgets, BLoC/Cubit state          (Phase 3)
+  presentation/   ← screens, widgets, BLoC/Cubit state          (Phase 3 ✅)
   core/           ← config, theming, logging, flavor handling   (Phase 0 ✅)
 ```
 
@@ -148,8 +148,8 @@ rejected rather than silently accepted.
 | **0** | Scaffold, flavors, layered structure, CI, theming, logging | ✅ Complete |
 | **1** | Crypto core: Argon2id, AES-256-GCM, key lifecycle, biometric gate | ✅ Complete |
 | **2** | Encrypted blob storage + SQLCipher metadata database | ✅ Complete |
-| **3** | Onboarding, lock/unlock screens, auto-lock | ⏳ Next |
-| 4 | Vault UI — document list, viewer, categories, search | Planned |
+| **3** | Onboarding, lock/unlock screens, auto-lock | ✅ Complete |
+| **4** | Vault UI — document list, viewer, categories, search | ⏳ Next |
 | 5 | Document scanner + import | Planned |
 | 6 | Expiry reminders via local notifications | Planned |
 | 7 | Google Drive backup & multi-device sync | Planned |
@@ -173,23 +173,33 @@ rejected rather than silently accepted.
 - SQLCipher metadata database (title, category, tags, notes, expiry,
   timestamps, sync version) under its own derived key
 - A working vault: add, open, list, update, and delete documents
+- Onboarding with an explicit unrecoverable-passphrase acknowledgement
+- Biometric unlock with passphrase fallback
+- Auto-lock on backgrounding and on inactivity
+- Screenshot and app-switcher blocking on both platforms
 - An on-device benchmark and a debug harness for verifying the platform
   integrations that unit tests cannot reach
 
-**Immediately next:** Phase 3 — onboarding, and the lock/unlock screens
-that put a real interface in front of the vault.
+**Immediately next:** Phase 4 — the vault UI: document list, viewer,
+categories, and search.
 
 ### Tests
 
-**192 tests**, `flutter analyze` clean under
+**231 tests**, `flutter analyze` clean under
 [very_good_analysis][very_good_analysis_link].
 
-Line coverage is **94%** for `lib/security` and **92%** overall across
-code reachable from unit tests. The two platform wrappers — Keystore /
-Keychain access and the biometric prompt — are excluded because they
-require platform channels that cannot run under `flutter test`. Both are
-deliberately kept as thin pass-throughs so that untested code stays
-minimal, and they are verified on-device via the debug harness instead.
+Line coverage is **94%** for `lib/security` and **76%** overall across
+code reachable from unit tests. The overall figure dropped when
+Phase 3 added the UI: screens are covered by widget tests at the flow
+level rather than line by line, and the security and data layers — where
+a bug is unrecoverable rather than merely visible — are where the effort
+is deliberately concentrated.
+
+The platform wrappers — Keystore/Keychain, the biometric prompt,
+`path_provider`, and SQLCipher itself — are excluded because they require
+platform channels that cannot run under `flutter test`. All are
+deliberately kept as thin pass-throughs so untested code stays minimal,
+and they need on-device verification instead.
 
 Coverage includes round-trip correctness at 5 MB, nonce non-reuse across
 100 encryptions, wrong-key and tampered-ciphertext rejection, KDF
@@ -214,26 +224,21 @@ blob is rejected, and that opening returns the exact original bytes.
 flutter test
 ```
 
-**Exercise the crypto on a real device.** A throwaway harness that walks
-the actual flow — set up vault → encrypt → lock → biometric unlock →
-decrypt and verify — against real Keystore and a real fingerprint prompt:
-
-```sh
-flutter run --flavor development -d <device-id> -t lib/main_crypto_debug.dart --profile
-```
-
 **Benchmark key derivation on your own hardware:**
 
 ```sh
 flutter test integration_test/crypto_benchmark_test.dart --flavor development -d <device-id>
 ```
 
-**Run the app itself** (currently the scaffold placeholder — there is no
-vault UI yet):
+**Run the app:**
 
 ```sh
 flutter run --flavor development --target lib/main_development.dart
 ```
+
+You will get the real onboarding flow, and after setup a working
+biometric unlock. The screen behind the lock is a placeholder until
+Phase 4.
 
 ---
 
