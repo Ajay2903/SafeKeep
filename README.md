@@ -197,13 +197,14 @@ user's own Google Drive, and multi-device sync.
 **285 tests**, `flutter analyze` clean under
 [very_good_analysis][very_good_analysis_link].
 
-Line coverage is **94%** for `lib/security` and **58%** overall across
+Line coverage is **94%** for `lib/security` and **71%** overall across
 code reachable from unit tests. The gap between those two numbers is the honest state of things: testing
 effort is concentrated on the security and data layers, where a bug is
-silent and unrecoverable, while the UI added in Phases 3 and 4 is covered
-at the cubit and flow level rather than widget by widget. That is a
-deliberate priority, not a claim that the UI is well covered — widget
-test coverage is the most obvious gap in this repo today.
+silent and unrecoverable, while the UI is covered at the cubit and flow
+level rather than widget by widget. Overall coverage rose from 56% once
+Phases 5 and 6 added flow-level widget tests — including one that caught
+a real crash when opening a document — but per-widget coverage is still
+the thinnest part of the repo.
 
 The platform wrappers — Keystore/Keychain, the biometric prompt,
 `path_provider`, and SQLCipher itself — are excluded because they require
