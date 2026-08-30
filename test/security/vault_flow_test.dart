@@ -226,7 +226,10 @@ void main() {
       );
 
       // Drive the controller directly rather than waiting on a timer.
-      AutoLockController(keyManager: keyManager).lockNow();
+      AutoLockController(
+        onLock: keyManager.lock,
+        isUnlocked: () => keyManager.isUnlocked,
+      ).lockNow();
 
       await expectLater(
         () => encryption.decrypt(blob, keyId: _keyId, documentId: _docId),

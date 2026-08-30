@@ -1,6 +1,6 @@
 import 'dart:async';
 
-import 'package:safekeep/security/key_management/key_manager.dart';
+import 'package:flutter/foundation.dart' show VoidCallback;
 
 /// Decides when an unattended vault should seal itself.
 ///
@@ -23,20 +23,32 @@ import 'package:safekeep/security/key_management/key_manager.dart';
 ///
 /// # Why this is driven by explicit calls
 ///
-/// This class deliberately does not observe `WidgetsBinding` itself.
-/// `lib/security/` stays free of Flutter UI dependencies so it remains
-/// auditable and unit-testable in isolation; the presentation layer owns
-/// lifecycle and gesture observation and calls in here. The timing policy
-/// lives here so it can be tested deterministically with fake timers.
+/// This class deliberately does not observe `WidgetsBinding` itself. The
+/// presentation layer owns lifecycle and gesture observation and calls in
+/// here; the timing policy lives here so it can be tested
+/// deterministically with fake timers rather than by waiting minutes.
+///
+/// # Why it reports rather than locks
+///
+/// It invokes its `onLock` callback instead of calling
+/// `KeyManager.lock()` directly.
+/// Locking the vault is more than clearing key material — the metadata
+/// database has to be closed and the UI has to leave every screen that
+/// shows decrypted content. Calling the key manager from here would seal
+/// the key while leaving the rest of the app believing it was still
+/// unlocked. The owner decides what locking means; this class only
+/// decides *when*.
 class AutoLockController {
   AutoLockController({
-    required KeyManager keyManager,
+    required VoidCallback onLock,
+    required bool Function() isUnlocked,
     Duration backgroundGracePeriod = defaultBackgroundGracePeriod,
     Duration inactivityTimeout = defaultInactivityTimeout,
-  }) : this._(keyManager, backgroundGracePeriod, inactivityTimeout);
+  }) : this._(onLock, isUnlocked, backgroundGracePeriod, inactivityTimeout);
 
   AutoLockController._(
-    this._keyManager,
+    this._onLock,
+    this._isUnlocked,
     this._backgroundGracePeriod,
     this._inactivityTimeout,
   );
@@ -55,7 +67,8 @@ class AutoLockController {
   /// vault left open on an unattended desk does not stay open.
   static const Duration defaultInactivityTimeout = Duration(minutes: 3);
 
-  final KeyManager _keyManager;
+  final VoidCallback _onLock;
+  final bool Function() _isUnlocked;
   final Duration _backgroundGracePeriod;
   final Duration _inactivityTimeout;
 
@@ -79,7 +92,7 @@ class AutoLockController {
     _backgroundTimer?.cancel();
     _backgroundTimer = Timer(_backgroundGracePeriod, () {
       _backgroundTimer = null;
-      _keyManager.lock();
+      _onLock();
     });
   }
 
@@ -100,13 +113,13 @@ class AutoLockController {
   /// the vault is already locked, since there would be nothing to lock.
   void recordInteraction() {
     _inactivityTimer?.cancel();
-    if (!_keyManager.isUnlocked) {
+    if (!_isUnlocked()) {
       _inactivityTimer = null;
       return;
     }
     _inactivityTimer = Timer(_inactivityTimeout, () {
       _inactivityTimer = null;
-      _keyManager.lock();
+      _onLock();
     });
   }
 
@@ -116,7 +129,7 @@ class AutoLockController {
   /// get a grace period — a screen-off or device-lock signal.
   void lockNow() {
     _cancelAll();
-    _keyManager.lock();
+    _onLock();
   }
 
   /// Cancels pending timers. Call when disposing the owner.
