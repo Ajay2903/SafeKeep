@@ -89,6 +89,7 @@ cryptographic review.
 | **Key separation** | HKDF-SHA256 with distinct `info` labels | Produces an encryption key and a separate verification value. The verifier can be stored (and travel with a backup) without revealing the encryption key. |
 | **Key storage** | Android Keystore / iOS Keychain, biometric-gated | The gate must pass *before* the key is read out of storage. Keychain items are marked device-only so the key never syncs to iCloud. |
 | **Blob format** | `[version:1][nonce:12][tag:16][ciphertext:N]` | Fixed 29-byte header; version byte so the format can evolve unambiguously. |
+| **Document binding** | Document id bound as GCM associated data | One key encrypts every document, so without this any blob authenticated in any position — an attacker with write access could swap two documents undetected. |
 
 **Storage blob layout**
 
@@ -99,6 +100,11 @@ Offset  Length  Field
     13      16  GCM authentication tag (128-bit)
     29       N  ciphertext
 ```
+
+The tag additionally covers associated data that is never stored — it is
+rebuilt at decryption time from the version byte and the document
+identifier, so a blob only authenticates for the document it was written
+for.
 
 ### Engineering decisions worth calling out
 
@@ -125,10 +131,12 @@ caller can act on the difference. Tests include an exhaustive sweep
 flipping *every individual byte* of a blob and asserting each is rejected.
 
 **Writing it down found a bug.** Preparing the review document surfaced a
-real gap: because all documents share one key and no associated data is
+real gap: because all documents share one key and no associated data was
 bound, an attacker with storage write access could swap one valid blob
-for another and both would authenticate. It is documented as a known
-weakness and is the next item of work.
+for another and both would authenticate — the app would show the wrong
+document with no error. Fixed by binding the document identity as GCM
+associated data, with the format version bumped so the old format is
+rejected rather than silently accepted.
 
 ---
 
@@ -157,18 +165,20 @@ weakness and is the next item of work.
   crypto-erase, with the key zeroed from memory on lock
 - Auto-lock after a background grace period
 - Passphrase verification without decrypting any document
+- Document-bound ciphertext (GCM associated data) preventing blob
+  substitution between documents
 - An on-device benchmark and a debug harness for verifying the platform
   integrations that unit tests cannot reach
 
-**Immediately next:** bind a document identifier as GCM associated data
-(closing the blob-substitution gap above), then Phase 2.
+**Immediately next:** Phase 2 — encrypted file storage on disk and the
+SQLCipher metadata database.
 
 ### Tests
 
-**105 tests**, `flutter analyze` clean under
+**117 tests**, `flutter analyze` clean under
 [very_good_analysis][very_good_analysis_link].
 
-Line coverage is **93%** for `lib/security` and **92.6%** overall across
+Line coverage is **94%** for `lib/security` and **92.8%** overall across
 code reachable from unit tests. The two platform wrappers — Keystore /
 Keychain access and the biometric prompt — are excluded because they
 require platform channels that cannot run under `flutter test`. Both are

@@ -255,6 +255,12 @@ class _Actions extends StatelessWidget {
             child: const Text('Tamper + decrypt'),
           ),
           OutlinedButton(
+            onPressed: busy || !state.unlocked
+                ? null
+                : cubit.proveDocumentBinding,
+            child: const Text('Prove document binding'),
+          ),
+          OutlinedButton(
             style: OutlinedButton.styleFrom(
               foregroundColor: Theme.of(context).colorScheme.error,
             ),

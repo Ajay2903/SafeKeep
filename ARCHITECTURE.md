@@ -73,7 +73,7 @@ the app's security posture has exactly one directory to read). See
 
 **Status (Phase 1): implemented.** Argon2id key derivation, AES-256-GCM
 encryption, the vault key lifecycle, and the biometric gate are all real
-code with 92 tests. See the "Phase 1 — encryption layer" section below and
+code with 117 tests. See the "Phase 1 — encryption layer" section below and
 `lib/security/README.md` for the design.
 
 ### `data/`, `domain/`, `presentation/`
@@ -282,11 +282,19 @@ plaintext XOR and enables forgery.
 
 ```text
 Offset  Length  Field
-     0       1  format version (0x01)
+     0       1  format version (0x02)
      1      12  nonce  (96-bit, fresh per encryption)
     13      16  GCM authentication tag (128-bit)
     29       N  ciphertext (N == plaintext length)
 ```
+
+The tag also covers associated data that is **not** stored — it is
+rebuilt at decryption time as
+`version || uint32be(len(utf8(documentId))) || utf8(documentId)`. Because
+one key encrypts every document, without this binding any blob
+authenticated in any position, letting an attacker with storage write
+access swap one document's blob for another undetected. Version `0x01`
+predates the binding and is rejected rather than supported.
 
 Total `29 + N` bytes. 96-bit nonce because GCM consumes that length
 directly rather than compressing it through GHASH; full 128-bit tag

@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -107,6 +108,21 @@ void main() {
       );
     });
 
+    test('rejects the pre-release v1 format', () {
+      // v1 bound no associated data and was vulnerable to blob
+      // substitution; accepting it would reintroduce that weakness.
+      final blob = EncryptedBlob.pack(
+        nonce: _bytes(12, 0),
+        tag: _bytes(16, 0),
+        ciphertext: _bytes(4, 0),
+      )..[0] = 0x01;
+
+      expect(
+        () => EncryptedBlob.unpack(blob),
+        throwsA(isA<MalformedCiphertextException>()),
+      );
+    });
+
     test('throws on an unknown format version', () {
       final blob = EncryptedBlob.pack(
         nonce: _bytes(12, 0),
@@ -131,6 +147,58 @@ void main() {
       final blob = _bytes(29, 0)..[0] = EncryptedBlob.version;
 
       expect(EncryptedBlob.unpack(blob).ciphertext, isEmpty);
+    });
+  });
+
+  group('EncryptedBlob.associatedData', () {
+    test('is version || uint32be(len) || utf8(documentId)', () {
+      final aad = EncryptedBlob.associatedData(documentId: 'abc');
+
+      expect(aad.length, 1 + 4 + 3);
+      expect(aad[0], EncryptedBlob.version, reason: 'version is bound');
+      expect(aad.sublist(1, 5), [0, 0, 0, 3], reason: 'big-endian length');
+      expect(aad.sublist(5), utf8.encode('abc'));
+    });
+
+    test('differs for different document ids', () {
+      expect(
+        EncryptedBlob.associatedData(documentId: 'a'),
+        isNot(EncryptedBlob.associatedData(documentId: 'b')),
+      );
+    });
+
+    test('is deterministic for the same id', () {
+      expect(
+        EncryptedBlob.associatedData(documentId: 'doc-1'),
+        EncryptedBlob.associatedData(documentId: 'doc-1'),
+      );
+    });
+
+    test('encodes the document id as UTF-8, not UTF-16', () {
+      const id = 'é🔐';
+      final aad = EncryptedBlob.associatedData(documentId: id);
+
+      expect(aad.sublist(5), utf8.encode(id));
+    });
+
+    test('the length prefix keeps concatenations unambiguous', () {
+      // Without a length prefix, ("ab","c") and ("a","bc") could collide
+      // once a second field is ever appended after the id.
+      expect(
+        EncryptedBlob.associatedData(documentId: 'ab'),
+        isNot(EncryptedBlob.associatedData(documentId: 'a')),
+      );
+      expect(
+        EncryptedBlob.associatedData(documentId: 'ab').sublist(1, 5),
+        [0, 0, 0, 2],
+      );
+    });
+
+    test('handles an empty document id', () {
+      final aad = EncryptedBlob.associatedData(documentId: '');
+
+      expect(aad.length, 5);
+      expect(aad.sublist(1, 5), [0, 0, 0, 0]);
     });
   });
 }

@@ -58,12 +58,17 @@ class AesGcmEncryptionService implements EncryptionService {
   Future<Uint8List> encrypt(
     Uint8List plaintext, {
     required String keyId,
+    required String documentId,
   }) async {
     final secretKey = await _secretKeyFor(keyId);
 
     // No explicit nonce argument: the library generates a fresh one from
     // Random.secure for every call, which is exactly what we want.
-    final box = await _algorithm.encrypt(plaintext, secretKey: secretKey);
+    final box = await _algorithm.encrypt(
+      plaintext,
+      secretKey: secretKey,
+      aad: EncryptedBlob.associatedData(documentId: documentId),
+    );
 
     return EncryptedBlob.pack(
       nonce: box.nonce,
@@ -76,6 +81,7 @@ class AesGcmEncryptionService implements EncryptionService {
   Future<Uint8List> decrypt(
     Uint8List ciphertext, {
     required String keyId,
+    required String documentId,
   }) async {
     // Parse (and therefore validate framing) before touching key material.
     final parsed = EncryptedBlob.unpack(ciphertext);
@@ -88,12 +94,17 @@ class AesGcmEncryptionService implements EncryptionService {
     );
 
     try {
-      final plaintext = await _algorithm.decrypt(box, secretKey: secretKey);
+      final plaintext = await _algorithm.decrypt(
+        box,
+        secretKey: secretKey,
+        aad: EncryptedBlob.associatedData(documentId: documentId),
+      );
       return Uint8List.fromList(plaintext);
     } on SecretBoxAuthenticationError {
       // The tag did not verify. Translate into our own exception rather
       // than leaking a third-party type, and deliberately do not say
-      // whether the cause was tampering, corruption, or a wrong key.
+      // whether the cause was tampering, corruption, a wrong key, or a
+      // mismatched documentId.
       //
       // Nothing is logged here: an error path around decryption is exactly
       // where plaintext or key material would leak into logs.

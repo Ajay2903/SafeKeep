@@ -86,6 +86,8 @@ class CryptoDebugCubit extends Cubit<CryptoDebugState> {
   ) : super(const CryptoDebugState());
 
   static const String _keyId = 'master';
+  static const String _documentId = 'debug-document-1';
+  static const String _otherDocumentId = 'debug-document-2';
 
   final KeyManager _keyManager;
   final AesGcmEncryptionService _encryption;
@@ -175,7 +177,11 @@ class CryptoDebugCubit extends Cubit<CryptoDebugState> {
   Future<void> encryptSample() => _guard(() async {
     final plaintext = _syntheticDocument(256 * 1024);
     final stopwatch = Stopwatch()..start();
-    final blob = await _encryption.encrypt(plaintext, keyId: _keyId);
+    final blob = await _encryption.encrypt(
+      plaintext,
+      keyId: _keyId,
+      documentId: _documentId,
+    );
     stopwatch.stop();
 
     _plaintext = plaintext;
@@ -197,8 +203,16 @@ class CryptoDebugCubit extends Cubit<CryptoDebugState> {
   /// Encrypts the same bytes again to show the ciphertext differs.
   Future<void> proveNonceFreshness() => _guard(() async {
     final plaintext = _syntheticDocument(64);
-    final first = await _encryption.encrypt(plaintext, keyId: _keyId);
-    final second = await _encryption.encrypt(plaintext, keyId: _keyId);
+    final first = await _encryption.encrypt(
+      plaintext,
+      keyId: _keyId,
+      documentId: _documentId,
+    );
+    final second = await _encryption.encrypt(
+      plaintext,
+      keyId: _keyId,
+      documentId: _documentId,
+    );
 
     final identical = _sameBytes(first, second);
     _log('Encrypt #1: ${_hexPrefix(first)}', LogTone.info);
@@ -211,6 +225,54 @@ class CryptoDebugCubit extends Cubit<CryptoDebugState> {
     );
   });
 
+  /// Encrypts under one document id, then tries to read it as another.
+  ///
+  /// This is the blob-substitution attack: without associated data
+  /// binding the document identity, the same vault key made every blob
+  /// valid in any position, so a swapped blob decrypted cleanly and the
+  /// wrong document was shown with no error.
+  Future<void> proveDocumentBinding() => _guard(() async {
+    final plaintext = _syntheticDocument(128);
+    final blob = await _encryption.encrypt(
+      plaintext,
+      keyId: _keyId,
+      documentId: _documentId,
+    );
+    _log('Encrypted as "$_documentId"', LogTone.info);
+
+    try {
+      await _encryption.decrypt(
+        blob,
+        keyId: _keyId,
+        documentId: _otherDocumentId,
+      );
+      _log(
+        'FAIL: blob decrypted under "$_otherDocumentId" - substitution '
+        'is possible',
+        LogTone.failure,
+      );
+    } on DecryptionAuthenticationException {
+      _log(
+        'PASS: rejected when read as "$_otherDocumentId" - blobs are '
+        'bound to their document',
+        LogTone.success,
+      );
+    }
+
+    // And it still decrypts correctly under its own id.
+    final ok = await _encryption.decrypt(
+      blob,
+      keyId: _keyId,
+      documentId: _documentId,
+    );
+    _log(
+      _sameBytes(ok, plaintext)
+          ? 'PASS: still decrypts correctly under its own id'
+          : 'FAIL: no longer decrypts under its own id',
+      _sameBytes(ok, plaintext) ? LogTone.success : LogTone.failure,
+    );
+  });
+
   Future<void> decryptAndVerify() => _guard(() async {
     final blob = _blob;
     final original = _plaintext;
@@ -220,7 +282,11 @@ class CryptoDebugCubit extends Cubit<CryptoDebugState> {
     }
 
     final stopwatch = Stopwatch()..start();
-    final decrypted = await _encryption.decrypt(blob, keyId: _keyId);
+    final decrypted = await _encryption.decrypt(
+      blob,
+      keyId: _keyId,
+      documentId: _documentId,
+    );
     stopwatch.stop();
 
     final match = _sameBytes(decrypted, original);
@@ -247,7 +313,11 @@ class CryptoDebugCubit extends Cubit<CryptoDebugState> {
     _log('Flipped one bit at byte $index of the ciphertext', LogTone.info);
 
     try {
-      await _encryption.decrypt(tampered, keyId: _keyId);
+      await _encryption.decrypt(
+        tampered,
+        keyId: _keyId,
+        documentId: _documentId,
+      );
       _log(
         'FAIL: tampered data decrypted without error',
         LogTone.failure,
@@ -315,7 +385,11 @@ class CryptoDebugCubit extends Cubit<CryptoDebugState> {
     }
 
     try {
-      await _encryption.decrypt(blob, keyId: _keyId);
+      await _encryption.decrypt(
+        blob,
+        keyId: _keyId,
+        documentId: _documentId,
+      );
       _log('FAIL: decrypted while locked', LogTone.failure);
     } on VaultLockedException catch (error) {
       _log('PASS: refused - ${error.message}', LogTone.success);

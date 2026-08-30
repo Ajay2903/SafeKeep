@@ -186,11 +186,19 @@ void main() {
           final plaintext = Uint8List(megabytes * 1024 * 1024);
 
           final encryptWatch = Stopwatch()..start();
-          final blob = await service.encrypt(plaintext, keyId: 'bench');
+          final blob = await service.encrypt(
+            plaintext,
+            keyId: 'bench',
+            documentId: 'bench-doc',
+          );
           encryptWatch.stop();
 
           final decryptWatch = Stopwatch()..start();
-          await service.decrypt(blob, keyId: 'bench');
+          await service.decrypt(
+            blob,
+            keyId: 'bench',
+            documentId: 'bench-doc',
+          );
           decryptWatch.stop();
 
           debugPrint(

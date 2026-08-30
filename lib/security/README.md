@@ -52,7 +52,9 @@ passphrase + salt
 ```
 
 Stored blob: `[version:1][nonce:12][tag:16][ciphertext:N]`, a fixed
-29-byte header. Full rationale for every size is in
+29-byte header. The GCM tag also covers associated data binding the
+blob to its document id, which is rebuilt at decrypt time rather than
+stored. Full rationale for every size is in
 `encryption/encrypted_blob.dart`.
 
 Persisted in Keystore/Keychain: salt, KDF parameters, verifier, and the

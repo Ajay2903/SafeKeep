@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:safekeep/security/security_exceptions.dart';
@@ -9,13 +10,18 @@ import 'package:safekeep/security/security_exceptions.dart';
 /// ```text
 /// Offset  Length  Field
 /// ------  ------  ---------------------------------------------------
-///      0       1  format version (currently 0x01)
+///      0       1  format version (currently 0x02)
 ///      1      12  nonce  — 96-bit, freshly random for every encryption
 ///     13      16  tag    — 128-bit AES-GCM authentication tag
 ///     29       N  ciphertext — exactly as long as the plaintext
 /// ```
 ///
 /// Total size is always `29 + plaintextLength` bytes.
+///
+/// The GCM tag additionally covers the associated data built by
+/// [associatedData], which is **not** stored in the blob — it is
+/// reconstructed at decryption time from the format version and the
+/// document identifier the caller supplies. See that method for why.
 ///
 /// # Why these sizes
 ///
@@ -48,7 +54,13 @@ import 'package:safekeep/security/security_exceptions.dart';
 /// rather than appending it, so nothing here is fighting the library.)
 abstract final class EncryptedBlob {
   /// Current format version written by [pack].
-  static const int version = 0x01;
+  ///
+  /// `0x01` was the pre-release format, which bound no associated data and
+  /// is therefore not readable by this build. It is deliberately not
+  /// supported: v1 blobs were vulnerable to the substitution attack that
+  /// [associatedData] exists to prevent, so silently accepting them would
+  /// reintroduce exactly the weakness the version bump closes.
+  static const int version = 0x02;
 
   static const int versionLength = 1;
   static const int nonceLength = 12;
@@ -60,6 +72,58 @@ abstract final class EncryptedBlob {
   static const int _nonceOffset = versionLength;
   static const int _tagOffset = _nonceOffset + nonceLength;
   static const int _ciphertextOffset = _tagOffset + tagLength;
+
+  /// Builds the AES-GCM associated data binding a blob to one document.
+  ///
+  /// # The attack this prevents
+  ///
+  /// Every document is encrypted under the same vault key. Without
+  /// associated data, a blob is valid *anywhere*: an attacker who can
+  /// write to storage (the user's own cloud backup being the realistic
+  /// case) could replace document A's blob with document B's, and
+  /// decryption would succeed with a perfectly valid tag. The app would
+  /// then display the wrong document with no indication anything was
+  /// wrong — a silent integrity failure, not a detected one.
+  ///
+  /// Binding the document identifier means a blob only authenticates
+  /// under the identity it was encrypted for. Substitution now fails the
+  /// tag check like any other tampering.
+  ///
+  /// # Encoding
+  ///
+  /// ```text
+  ///  version (1 byte)
+  ///  documentId length (4 bytes, big-endian uint32)
+  ///  documentId (UTF-8, that many bytes)
+  /// ```
+  ///
+  /// The length prefix makes the encoding unambiguous. With a single
+  /// trailing variable-length field it would be safe without one today,
+  /// but any future field appended after `documentId` would create
+  /// collisions between different (version, id, extra) triples. Prefixing
+  /// now costs four bytes of AAD — which is never stored — and removes
+  /// that trap entirely.
+  ///
+  /// Including the version byte also authenticates it. It sits in the
+  /// blob header, which GCM does not otherwise cover, so without this an
+  /// attacker could flip it freely.
+  ///
+  /// This AAD is **not** stored: it is recomputed at decryption time from
+  /// the version in the header and the document id supplied by the
+  /// caller. A caller asking for the wrong document therefore gets an
+  /// authentication failure rather than someone else's plaintext.
+  static Uint8List associatedData({required String documentId}) {
+    final idBytes = utf8.encode(documentId);
+    final aad = Uint8List(versionLength + 4 + idBytes.length);
+    aad[0] = version;
+    ByteData.sublistView(
+      aad,
+      versionLength,
+      versionLength + 4,
+    ).setUint32(0, idBytes.length);
+    aad.setRange(versionLength + 4, aad.length, idBytes);
+    return aad;
+  }
 
   /// Assembles the stored representation from its parts.
   ///

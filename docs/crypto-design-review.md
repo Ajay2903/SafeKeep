@@ -167,7 +167,25 @@ single key. A personal document vault is many orders of magnitude below
 that. Note this budget is shared across all documents, since all documents
 are encrypted under one key (see *Known weaknesses*).
 
-**Associated data:** none currently supplied. See *Known weaknesses* #1.
+**Associated data.** Every encryption binds the document's identity, so a
+blob only authenticates in the position it was written for:
+
+```
+AAD = format_version (1 byte)
+   || len(utf8(document_id))  (4 bytes, big-endian uint32)
+   || utf8(document_id)
+```
+
+The AAD is not stored; it is reconstructed at decryption time from the
+version byte in the header and the document identifier supplied by the
+caller. Since all documents share one key, without this any blob was
+valid in any position and an attacker with write access could substitute
+one for another undetected. Including the version byte also authenticates
+it — it lives in the blob header, which GCM does not otherwise cover.
+
+The length prefix is not strictly required with a single trailing
+variable-length field, but it removes the ambiguity that would appear the
+moment any further field were appended.
 
 ### 2.3 Key separation — HKDF-SHA256
 
@@ -367,13 +385,19 @@ becomes unrecoverable whether or not the ciphertext still exists.
 ```
 Offset  Length  Field
 ------  ------  --------------------------------------------------
-     0       1  format version (currently 0x01)
+     0       1  format version (currently 0x02)
      1      12  nonce (96-bit, fresh CSPRNG output per encryption)
     13      16  GCM authentication tag (128-bit, untruncated)
     29       N  ciphertext (N == plaintext length)
 ```
 
-Total size is always `29 + plaintext_length`. The header is fixed-width so
+Total size is always `29 + plaintext_length`. The tag additionally covers
+the associated data described in §2.2, which is reconstructed rather than
+stored.
+
+Format version `0x01` was a pre-release format that bound no associated
+data. It is rejected outright rather than supported, since accepting it
+would reintroduce the substitution weakness the binding closes. The header is fixed-width so
 parsing never depends on total length. The tag is stored at a fixed offset
 *before* the ciphertext rather than appended.
 
@@ -410,18 +434,19 @@ of a blob and asserting that each modification is rejected.
 
 Listed so reviewers can skip re-deriving them and focus on anything worse.
 
-1. **No associated data binding a blob to a document identity.** All
-   documents share one key and no AAD is supplied, so an attacker with
-   write access to storage can *substitute* one valid blob for another.
-   Both decrypt and authenticate correctly; the application would display
-   the wrong document. Binding a document identifier (and the format
-   version) as AAD looks like the obvious fix. **Is there a reason not
-   to?**
-2. **A single key encrypts all documents.** Simple, but it means no
+**Recently closed:** an earlier revision bound no associated data, so with
+a single key shared across documents any blob authenticated in any
+position and could be substituted for another undetected. This was found
+while preparing this document and is fixed as described in §2.2; the
+format version was bumped to `0x02` and the previous format is rejected.
+Critique of the AAD encoding itself is welcome.
+
+1. **A single key encrypts all documents.** Simple, but it means no
    per-document crypto-erase, a shared nonce budget, and no compartment-
-   alisation. Per-document keys wrapped by `K_enc` were considered but not
-   implemented.
-3. **AES is implemented in pure software with key-dependent table
+   alisation. The AAD binding in §2.2 removes the substitution
+   consequence, but not the others. Per-document keys wrapped by `K_enc`
+   were considered but not implemented.
+2. **AES is implemented in pure software with key-dependent table
    lookups** (S-box / T-table style), and the library makes no
    constant-time claims. This is textbook cache-timing-attack surface. On
    a mobile device the attacker needs local code execution to exploit it,
@@ -429,7 +454,7 @@ Listed so reviewers can skip re-deriving them and focus on anything worse.
    implementations carry the same caveat, and the constant-time verifier
    comparison is hand-written rather than provided by a hardened library.
    **How much should this worry us in practice?**
-4. **Stored metadata is not authenticated by the application.** Salt, KDF
+3. **Stored metadata is not authenticated by the application.** Salt, KDF
    parameters, and `K_ver` rely entirely on the OS for integrity. An
    attacker able to write to secure storage could replace the whole set
    with a vault of their own; the user's existing blobs would then fail to
@@ -438,15 +463,15 @@ Listed so reviewers can skip re-deriving them and focus on anything worse.
    HKDF-derived key was considered — but that key would itself derive from
    the passphrase, so it is unclear this adds anything against an attacker
    who can already write to storage.
-5. **No passphrase strength policy is enforced.** Since the KDF cost is
+4. **No passphrase strength policy is enforced.** Since the KDF cost is
    the only barrier, a weak passphrase defeats the entire design. Nothing
    currently prevents a 4-character passphrase.
-6. **Ciphertext length reveals plaintext length exactly.** No padding.
-7. **Memory zeroization is best-effort and the passphrase cannot be wiped
+5. **Ciphertext length reveals plaintext length exactly.** No padding.
+6. **Memory zeroization is best-effort and the passphrase cannot be wiped
    at all** (§4.5).
-8. **No key rotation mechanism.** Changing the passphrase would require
+7. **No key rotation mechanism.** Changing the passphrase would require
    re-encrypting every document; not implemented.
-9. **The verification value is an offline guessing oracle** (§3.3) —
+8. **The verification value is an offline guessing oracle** (§3.3) —
    believed inherent, but flagged in case a better construction exists.
 
 ---

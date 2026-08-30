@@ -32,6 +32,7 @@ Uint8List _randomBytes(int length, {int seed = 42}) {
 
 void main() {
   const keyId = 'master';
+  const docId = 'doc-1';
   late AesGcmEncryptionService service;
 
   setUp(() {
@@ -44,8 +45,16 @@ void main() {
     test('small payload decrypts to the exact original bytes', () async {
       final plaintext = Uint8List.fromList([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
 
-      final blob = await service.encrypt(plaintext, keyId: keyId);
-      final result = await service.decrypt(blob, keyId: keyId);
+      final blob = await service.encrypt(
+        plaintext,
+        keyId: keyId,
+        documentId: docId,
+      );
+      final result = await service.decrypt(
+        blob,
+        keyId: keyId,
+        documentId: docId,
+      );
 
       expect(result, plaintext);
     });
@@ -54,39 +63,72 @@ void main() {
       // 5 MB stands in for a scanned multi-page PDF.
       final plaintext = _randomBytes(5 * 1024 * 1024);
 
-      final blob = await service.encrypt(plaintext, keyId: keyId);
-      final result = await service.decrypt(blob, keyId: keyId);
+      final blob = await service.encrypt(
+        plaintext,
+        keyId: keyId,
+        documentId: docId,
+      );
+      final result = await service.decrypt(
+        blob,
+        keyId: keyId,
+        documentId: docId,
+      );
 
       expect(result.length, plaintext.length);
       expect(result, plaintext);
     });
 
     test('empty payload round-trips', () async {
-      final blob = await service.encrypt(Uint8List(0), keyId: keyId);
+      final blob = await service.encrypt(
+        Uint8List(0),
+        keyId: keyId,
+        documentId: docId,
+      );
 
-      expect(await service.decrypt(blob, keyId: keyId), isEmpty);
+      expect(
+        await service.decrypt(blob, keyId: keyId, documentId: docId),
+        isEmpty,
+      );
     });
 
     test('single byte round-trips', () async {
       final plaintext = Uint8List.fromList([0xFF]);
 
-      final blob = await service.encrypt(plaintext, keyId: keyId);
+      final blob = await service.encrypt(
+        plaintext,
+        keyId: keyId,
+        documentId: docId,
+      );
 
-      expect(await service.decrypt(blob, keyId: keyId), plaintext);
+      expect(
+        await service.decrypt(blob, keyId: keyId, documentId: docId),
+        plaintext,
+      );
     });
 
     test('all-zero payload round-trips', () async {
       final plaintext = Uint8List(1024);
 
-      final blob = await service.encrypt(plaintext, keyId: keyId);
+      final blob = await service.encrypt(
+        plaintext,
+        keyId: keyId,
+        documentId: docId,
+      );
 
-      expect(await service.decrypt(blob, keyId: keyId), plaintext);
+      expect(
+        await service.decrypt(blob, keyId: keyId, documentId: docId),
+        plaintext,
+      );
     });
 
     test('blob is exactly 29 bytes longer than the plaintext', () async {
       final plaintext = _randomBytes(500);
 
-      final blob = await service.encrypt(plaintext, keyId: keyId);
+      final blob = await service.encrypt(
+        plaintext,
+        keyId: keyId,
+        documentId: docId,
+      );
 
       expect(blob.length, plaintext.length + EncryptedBlob.headerLength);
     });
@@ -98,16 +140,30 @@ void main() {
       () async {
         final plaintext = Uint8List.fromList([9, 9, 9, 9, 9, 9, 9, 9]);
 
-        final first = await service.encrypt(plaintext, keyId: keyId);
-        final second = await service.encrypt(plaintext, keyId: keyId);
+        final first = await service.encrypt(
+          plaintext,
+          keyId: keyId,
+          documentId: docId,
+        );
+        final second = await service.encrypt(
+          plaintext,
+          keyId: keyId,
+          documentId: docId,
+        );
 
         // Identical output would mean a fixed nonce, which in GCM leaks
         // the XOR of plaintexts and enables tag forgery.
         expect(first, isNot(second));
 
         // Both must still decrypt correctly.
-        expect(await service.decrypt(first, keyId: keyId), plaintext);
-        expect(await service.decrypt(second, keyId: keyId), plaintext);
+        expect(
+          await service.decrypt(first, keyId: keyId, documentId: docId),
+          plaintext,
+        );
+        expect(
+          await service.decrypt(second, keyId: keyId, documentId: docId),
+          plaintext,
+        );
       },
     );
 
@@ -115,10 +171,10 @@ void main() {
       final plaintext = Uint8List.fromList([9, 9, 9, 9]);
 
       final first = EncryptedBlob.unpack(
-        await service.encrypt(plaintext, keyId: keyId),
+        await service.encrypt(plaintext, keyId: keyId, documentId: docId),
       );
       final second = EncryptedBlob.unpack(
-        await service.encrypt(plaintext, keyId: keyId),
+        await service.encrypt(plaintext, keyId: keyId, documentId: docId),
       );
 
       expect(first.nonce, isNot(second.nonce));
@@ -129,7 +185,11 @@ void main() {
 
       final nonces = <String>{};
       for (var i = 0; i < 100; i++) {
-        final blob = await service.encrypt(plaintext, keyId: keyId);
+        final blob = await service.encrypt(
+          plaintext,
+          keyId: keyId,
+          documentId: docId,
+        );
         nonces.add(EncryptedBlob.unpack(blob).nonce.join(','));
       }
 
@@ -140,7 +200,11 @@ void main() {
   group('decryption fails loudly', () {
     test('wrong key throws DecryptionAuthenticationException', () async {
       final plaintext = Uint8List.fromList([1, 2, 3, 4]);
-      final blob = await service.encrypt(plaintext, keyId: keyId);
+      final blob = await service.encrypt(
+        plaintext,
+        keyId: keyId,
+        documentId: docId,
+      );
 
       final wrongKeyService = AesGcmEncryptionService(
         keySource: _FakeKeySource({keyId: _key(0x02)}),
@@ -148,14 +212,18 @@ void main() {
 
       // Must throw, never return garbage plaintext.
       await expectLater(
-        () => wrongKeyService.decrypt(blob, keyId: keyId),
+        () => wrongKeyService.decrypt(blob, keyId: keyId, documentId: docId),
         throwsA(isA<DecryptionAuthenticationException>()),
       );
     });
 
     test('flipping one ciphertext byte is detected by the tag', () async {
       final plaintext = _randomBytes(256);
-      final blob = await service.encrypt(plaintext, keyId: keyId);
+      final blob = await service.encrypt(
+        plaintext,
+        keyId: keyId,
+        documentId: docId,
+      );
 
       // Flip a single bit in the middle of the ciphertext body.
       final tampered = Uint8List.fromList(blob);
@@ -163,42 +231,54 @@ void main() {
       tampered[index] = tampered[index] ^ 0x01;
 
       await expectLater(
-        () => service.decrypt(tampered, keyId: keyId),
+        () => service.decrypt(tampered, keyId: keyId, documentId: docId),
         throwsA(isA<DecryptionAuthenticationException>()),
       );
     });
 
     test('tampering with the nonce is detected', () async {
-      final blob = await service.encrypt(_randomBytes(64), keyId: keyId);
+      final blob = await service.encrypt(
+        _randomBytes(64),
+        keyId: keyId,
+        documentId: docId,
+      );
 
       final tampered = Uint8List.fromList(blob);
       tampered[1] = tampered[1] ^ 0xFF;
 
       await expectLater(
-        () => service.decrypt(tampered, keyId: keyId),
+        () => service.decrypt(tampered, keyId: keyId, documentId: docId),
         throwsA(isA<DecryptionAuthenticationException>()),
       );
     });
 
     test('tampering with the auth tag is detected', () async {
-      final blob = await service.encrypt(_randomBytes(64), keyId: keyId);
+      final blob = await service.encrypt(
+        _randomBytes(64),
+        keyId: keyId,
+        documentId: docId,
+      );
 
       final tampered = Uint8List.fromList(blob);
       tampered[13] = tampered[13] ^ 0xFF;
 
       await expectLater(
-        () => service.decrypt(tampered, keyId: keyId),
+        () => service.decrypt(tampered, keyId: keyId, documentId: docId),
         throwsA(isA<DecryptionAuthenticationException>()),
       );
     });
 
     test('truncated ciphertext is detected', () async {
-      final blob = await service.encrypt(_randomBytes(256), keyId: keyId);
+      final blob = await service.encrypt(
+        _randomBytes(256),
+        keyId: keyId,
+        documentId: docId,
+      );
 
       final truncated = Uint8List.sublistView(blob, 0, blob.length - 10);
 
       await expectLater(
-        () => service.decrypt(truncated, keyId: keyId),
+        () => service.decrypt(truncated, keyId: keyId, documentId: docId),
         throwsA(isA<DecryptionAuthenticationException>()),
       );
     });
@@ -207,14 +287,18 @@ void main() {
       // Exhaustive sweep over a small blob: no byte position may be
       // modifiable without detection.
       final plaintext = _randomBytes(16);
-      final blob = await service.encrypt(plaintext, keyId: keyId);
+      final blob = await service.encrypt(
+        plaintext,
+        keyId: keyId,
+        documentId: docId,
+      );
 
       for (var i = 0; i < blob.length; i++) {
         final tampered = Uint8List.fromList(blob);
         tampered[i] = tampered[i] ^ 0xFF;
 
         await expectLater(
-          () => service.decrypt(tampered, keyId: keyId),
+          () => service.decrypt(tampered, keyId: keyId, documentId: docId),
           throwsA(isA<SecurityException>()),
           reason: 'corruption at byte $i went undetected',
         );
@@ -223,7 +307,8 @@ void main() {
 
     test('garbage input throws MalformedCiphertextException', () async {
       await expectLater(
-        () => service.decrypt(_randomBytes(10), keyId: keyId),
+        () =>
+            service.decrypt(_randomBytes(10), keyId: keyId, documentId: docId),
         throwsA(isA<MalformedCiphertextException>()),
       );
     });
@@ -236,8 +321,111 @@ void main() {
       );
 
       await expectLater(
-        () => shortKeyService.encrypt(Uint8List(4), keyId: keyId),
+        () => shortKeyService.encrypt(
+          Uint8List(4),
+          keyId: keyId,
+          documentId: docId,
+        ),
         throwsArgumentError,
+      );
+    });
+  });
+
+  group('document binding (blob substitution defence)', () {
+    test('a blob cannot be decrypted under a different documentId', () async {
+      // The substitution attack: all documents share one vault key, so
+      // without AAD binding, any blob authenticated in any position.
+      final plaintext = _randomBytes(128);
+      final blob = await service.encrypt(
+        plaintext,
+        keyId: keyId,
+        documentId: 'document-A',
+      );
+
+      await expectLater(
+        () => service.decrypt(
+          blob,
+          keyId: keyId,
+          documentId: 'document-B',
+        ),
+        throwsA(isA<DecryptionAuthenticationException>()),
+      );
+    });
+
+    test('swapping two blobs between documents is detected', () async {
+      final docA = _randomBytes(64, seed: 1);
+      final docB = _randomBytes(64, seed: 2);
+
+      final blobA = await service.encrypt(
+        docA,
+        keyId: keyId,
+        documentId: 'A',
+      );
+      final blobB = await service.encrypt(
+        docB,
+        keyId: keyId,
+        documentId: 'B',
+      );
+
+      // Attacker swaps the two stored blobs.
+      await expectLater(
+        () => service.decrypt(blobB, keyId: keyId, documentId: 'A'),
+        throwsA(isA<DecryptionAuthenticationException>()),
+      );
+      await expectLater(
+        () => service.decrypt(blobA, keyId: keyId, documentId: 'B'),
+        throwsA(isA<DecryptionAuthenticationException>()),
+      );
+    });
+
+    test('the correct documentId still round-trips', () async {
+      final plaintext = _randomBytes(128);
+      final blob = await service.encrypt(
+        plaintext,
+        keyId: keyId,
+        documentId: 'document-A',
+      );
+
+      expect(
+        await service.decrypt(
+          blob,
+          keyId: keyId,
+          documentId: 'document-A',
+        ),
+        plaintext,
+      );
+    });
+
+    test('a one-character difference in documentId is detected', () async {
+      final blob = await service.encrypt(
+        _randomBytes(32),
+        keyId: keyId,
+        documentId: 'document-1',
+      );
+
+      await expectLater(
+        () => service.decrypt(
+          blob,
+          keyId: keyId,
+          documentId: 'document-2',
+        ),
+        throwsA(isA<DecryptionAuthenticationException>()),
+      );
+    });
+
+    test('a non-ASCII documentId round-trips', () async {
+      const id = 'passeport-日本語-🔐';
+      final plaintext = _randomBytes(32);
+
+      final blob = await service.encrypt(
+        plaintext,
+        keyId: keyId,
+        documentId: id,
+      );
+
+      expect(
+        await service.decrypt(blob, keyId: keyId, documentId: id),
+        plaintext,
       );
     });
   });
@@ -251,11 +439,18 @@ void main() {
         );
         final plaintext = Uint8List.fromList([1, 2, 3]);
 
-        final blob = await multiKeyService.encrypt(plaintext, keyId: 'a');
+        final blob = await multiKeyService.encrypt(
+          plaintext,
+          keyId: 'a',
+          documentId: docId,
+        );
 
-        expect(await multiKeyService.decrypt(blob, keyId: 'a'), plaintext);
+        expect(
+          await multiKeyService.decrypt(blob, keyId: 'a', documentId: docId),
+          plaintext,
+        );
         await expectLater(
-          () => multiKeyService.decrypt(blob, keyId: 'b'),
+          () => multiKeyService.decrypt(blob, keyId: 'b', documentId: docId),
           throwsA(isA<DecryptionAuthenticationException>()),
         );
       },
