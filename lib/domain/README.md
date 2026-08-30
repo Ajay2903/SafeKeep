@@ -15,9 +15,15 @@ independent of how they're stored (`lib/data/`) or displayed
   these interfaces, never on `lib/data/` directly, which keeps state
   management testable against fakes.
 
-## Current status (Phase 0)
+## Current status (Phase 2)
 
-No models or repository interfaces exist yet — defining them now would
-mean designing the document vault's data model, which is feature work and
-explicitly out of scope for Phase 0. These subdirectories are created by
-the first feature that needs them.
+- `models/document.dart` — `Document`, metadata only. Deliberately never
+  carries the document's bytes, so listing a large vault decrypts
+  nothing. Its `toString` omits every user-supplied field, since models
+  end up in logs.
+- `models/document_category.dart` — `DocumentCategory`, persisted by
+  stable string rather than enum index so reordering the enum cannot
+  re-categorise existing rows.
+- `repositories/document_repository.dart` — `DocumentRepository`, the
+  vault's public surface. Presentation code depends on this alone and
+  never touches the cipher, the filesystem, or SQL.
