@@ -8,13 +8,12 @@ import your passport, licence, insurance and tax documents; they are
 encrypted on-device and never leave it in readable form. No server, no
 accounts, no telemetry.
 
-> ### 🚧 Status: in active development — Phases 0-3 of 10 complete
+> ### 🚧 Status: in active development — Phases 0-4 of 10 complete
 >
-> **The app runs: you can set up a vault, lock it, and unlock it with
-> your fingerprint.** Behind that lock the encrypted storage layer is
-> complete — documents can be added, encrypted, stored, listed, opened
-> and deleted through code — but the screens for managing them are
-> Phase 4.
+> **The app is usable end to end.** Set up a vault, unlock it with your
+> fingerprint, import a PDF or photo, and it is encrypted before it
+> reaches storage — then browse, search, view, edit and delete from a
+> real interface. Scanning, reminders, and cloud backup are later phases.
 >
 > This repository is deliberately being built bottom-up: the security
 > layer first, proven with tests, before any UI is written on top of it.
@@ -149,8 +148,8 @@ rejected rather than silently accepted.
 | **1** | Crypto core: Argon2id, AES-256-GCM, key lifecycle, biometric gate | ✅ Complete |
 | **2** | Encrypted blob storage + SQLCipher metadata database | ✅ Complete |
 | **3** | Onboarding, lock/unlock screens, auto-lock | ✅ Complete |
-| **4** | Vault UI — document list, viewer, categories, search | ⏳ Next |
-| 5 | Document scanner + import | Planned |
+| **4** | Vault UI — document list, viewer, categories, search | ✅ Complete |
+| **5** | Document scanner | ⏳ Next |
 | 6 | Expiry reminders via local notifications | Planned |
 | 7 | Google Drive backup & multi-device sync | Planned |
 | 8 | Audit log, transparency screen, export | Planned |
@@ -177,23 +176,27 @@ rejected rather than silently accepted.
 - Biometric unlock with passphrase fallback
 - Auto-lock on backgrounding and on inactivity
 - Screenshot and app-switcher blocking on both platforms
+- Import PDFs and photos, browse, search by title and tag, filter by
+  category, view, edit and delete
+- In-memory PDF and image viewing — decrypted bytes never touch disk
 - An on-device benchmark and a debug harness for verifying the platform
   integrations that unit tests cannot reach
 
-**Immediately next:** Phase 4 — the vault UI: document list, viewer,
-categories, and search.
+**Immediately next:** Phase 5 — document scanning, feeding captured pages
+into the same encrypt-and-store path that import already uses.
 
 ### Tests
 
-**231 tests**, `flutter analyze` clean under
+**249 tests**, `flutter analyze` clean under
 [very_good_analysis][very_good_analysis_link].
 
-Line coverage is **94%** for `lib/security` and **76%** overall across
-code reachable from unit tests. The overall figure dropped when
-Phase 3 added the UI: screens are covered by widget tests at the flow
-level rather than line by line, and the security and data layers — where
-a bug is unrecoverable rather than merely visible — are where the effort
-is deliberately concentrated.
+Line coverage is **94%** for `lib/security` and **56%** overall across
+code reachable from unit tests. The gap between those two numbers is the honest state of things: testing
+effort is concentrated on the security and data layers, where a bug is
+silent and unrecoverable, while the UI added in Phases 3 and 4 is covered
+at the cubit and flow level rather than widget by widget. That is a
+deliberate priority, not a claim that the UI is well covered — widget
+test coverage is the most obvious gap in this repo today.
 
 The platform wrappers — Keystore/Keychain, the biometric prompt,
 `path_provider`, and SQLCipher itself — are excluded because they require
@@ -236,9 +239,8 @@ flutter test integration_test/crypto_benchmark_test.dart --flavor development -d
 flutter run --flavor development --target lib/main_development.dart
 ```
 
-You will get the real onboarding flow, and after setup a working
-biometric unlock. The screen behind the lock is a placeholder until
-Phase 4.
+You get the real onboarding flow, biometric unlock, and the working
+vault behind it.
 
 ---
 
