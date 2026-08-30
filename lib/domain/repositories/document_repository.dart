@@ -22,6 +22,7 @@ abstract interface class DocumentRepository {
     required Uint8List bytes,
     required String title,
     required DocumentCategory category,
+    required String mimeType,
     List<String> tags,
     String? notes,
     DateTime? expiresAt,

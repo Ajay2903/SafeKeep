@@ -54,6 +54,7 @@ class VaultDocumentRepository implements DocumentRepository {
     required Uint8List bytes,
     required String title,
     required DocumentCategory category,
+    required String mimeType,
     List<String> tags = const [],
     String? notes,
     DateTime? expiresAt,
@@ -80,6 +81,7 @@ class VaultDocumentRepository implements DocumentRepository {
       version: 1,
       blobFileName: blobFileName,
       plaintextSizeBytes: bytes.length,
+      mimeType: mimeType,
     );
 
     // Blob first, then the row. The two failure shapes are not equally

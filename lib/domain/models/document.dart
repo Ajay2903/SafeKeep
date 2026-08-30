@@ -21,6 +21,7 @@ class Document {
     required this.version,
     required this.blobFileName,
     required this.plaintextSizeBytes,
+    required this.mimeType,
     this.notes,
     this.expiresAt,
   });
@@ -59,6 +60,19 @@ class Document {
   /// Size of the *decrypted* document, for display without decrypting.
   final int plaintextSizeBytes;
 
+  /// Content type of the stored bytes, e.g. `application/pdf`.
+  ///
+  /// Recorded at import so the viewer knows how to render a document
+  /// without decrypting it first and sniffing the bytes — which would
+  /// mean decrypting every document just to build a list.
+  final String mimeType;
+
+  /// Whether this document renders in the PDF viewer.
+  bool get isPdf => mimeType == 'application/pdf';
+
+  /// Whether this document renders as an image.
+  bool get isImage => mimeType.startsWith('image/');
+
   /// Whether this document has an expiry date already in the past.
   bool isExpiredAt(DateTime now) {
     final expiry = expiresAt;
@@ -88,6 +102,7 @@ class Document {
       version: version ?? this.version,
       blobFileName: blobFileName,
       plaintextSizeBytes: plaintextSizeBytes,
+      mimeType: mimeType,
     );
   }
 
@@ -104,7 +119,8 @@ class Document {
       other.modifiedAt == modifiedAt &&
       other.version == version &&
       other.blobFileName == blobFileName &&
-      other.plaintextSizeBytes == plaintextSizeBytes;
+      other.plaintextSizeBytes == plaintextSizeBytes &&
+      other.mimeType == mimeType;
 
   @override
   int get hashCode => Object.hash(
@@ -119,6 +135,7 @@ class Document {
     version,
     blobFileName,
     plaintextSizeBytes,
+    mimeType,
   );
 
   /// Deliberately omits every user-supplied field.

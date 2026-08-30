@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -32,6 +33,30 @@ class _InMemoryOpener implements DatabaseOpener {
   }
 }
 
+/// Opens a real file-backed database, so a migration survives a reopen.
+class _FileOpener implements DatabaseOpener {
+  _FileOpener(this.path);
+
+  final String path;
+
+  @override
+  Future<Database> open({
+    required Uint8List key,
+    required int version,
+    required OnDatabaseCreateFn onCreate,
+    required OnDatabaseVersionChangeFn onUpgrade,
+  }) {
+    return databaseFactoryFfi.openDatabase(
+      path,
+      options: OpenDatabaseOptions(
+        version: version,
+        onCreate: onCreate,
+        onUpgrade: onUpgrade,
+      ),
+    );
+  }
+}
+
 Document _document({
   String id = 'doc-1',
   String title = 'Passport',
@@ -55,6 +80,7 @@ Document _document({
     version: version,
     blobFileName: '$id.blob',
     plaintextSizeBytes: 2048,
+    mimeType: 'application/pdf',
   );
 }
 
@@ -238,6 +264,79 @@ void main() {
 
       expect(await dao.count(), 1);
       expect(await dao.findById('b'), isNotNull);
+    });
+  });
+
+  group('schema migration', () {
+    test(
+      'a v1 database gains the mime_type column with a safe default',
+      () async {
+        // A file-backed database, because an in-memory one is discarded
+        // on close and a migration can only be observed across a reopen.
+        final dir = Directory.systemTemp.createTempSync('safekeep_migrate');
+        final path = '${dir.path}/vault.db';
+
+        // Create the schema exactly as version 1 had it, with a row in
+        // it, simulating a vault made before Phase 4 added the viewer.
+        final v1 = await databaseFactoryFfi.openDatabase(
+          path,
+          options: OpenDatabaseOptions(
+            version: 1,
+            onCreate: (db, version) async {
+              await db.execute('''
+                CREATE TABLE ${AppDatabase.documentsTable} (
+                  id TEXT PRIMARY KEY NOT NULL,
+                  title TEXT NOT NULL,
+                  category TEXT NOT NULL,
+                  tags TEXT NOT NULL,
+                  notes TEXT,
+                  expires_at INTEGER,
+                  created_at INTEGER NOT NULL,
+                  modified_at INTEGER NOT NULL,
+                  version INTEGER NOT NULL,
+                  blob_file_name TEXT NOT NULL,
+                  plaintext_size_bytes INTEGER NOT NULL
+                )
+              ''');
+              await db.insert(AppDatabase.documentsTable, {
+                'id': 'legacy-1',
+                'title': 'Old passport',
+                'category': 'identity',
+                'tags': '[]',
+                'created_at': 1,
+                'modified_at': 1,
+                'version': 1,
+                'blob_file_name': 'legacy-1.blob',
+                'plaintext_size_bytes': 10,
+              });
+            },
+          ),
+        );
+        await v1.close();
+
+        // Reopening through AppDatabase runs the real migration.
+        final upgraded = AppDatabase(opener: _FileOpener(path));
+        await upgraded.open(Uint8List(32));
+        final dao = DocumentDao(database: upgraded);
+
+        final restored = await dao.findById('legacy-1');
+        expect(restored, isNotNull);
+        expect(
+          restored!.title,
+          'Old passport',
+          reason: 'existing metadata must survive the migration',
+        );
+        expect(restored.mimeType, 'application/octet-stream');
+        expect(restored.isPdf, isFalse);
+        expect(restored.isImage, isFalse);
+
+        await upgraded.close();
+        dir.deleteSync(recursive: true);
+      },
+    );
+
+    test('the current schema version is 2', () {
+      expect(AppDatabase.schemaVersion, 2);
     });
   });
 

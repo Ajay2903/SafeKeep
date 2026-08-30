@@ -25,7 +25,7 @@ class AppDatabase {
 
   /// Current schema version. Bump and add an [_upgrade] branch when the
   /// schema changes.
-  static const int schemaVersion = 1;
+  static const int schemaVersion = 2;
 
   static const String documentsTable = 'documents';
 
@@ -87,7 +87,8 @@ class AppDatabase {
         modified_at INTEGER NOT NULL,
         version INTEGER NOT NULL,
         blob_file_name TEXT NOT NULL,
-        plaintext_size_bytes INTEGER NOT NULL
+        plaintext_size_bytes INTEGER NOT NULL,
+        mime_type TEXT NOT NULL
       )
     ''');
 
@@ -103,16 +104,25 @@ class AppDatabase {
     );
   }
 
+  /// Migrates an existing database forward.
+  ///
+  /// One `if (from < n)` block per step, so an upgrade that skips
+  /// versions still applies every intermediate change in order.
+  ///
+  /// Never drop or recreate the documents table. Blobs on disk are keyed
+  /// by its rows, and a document's id is its AES-GCM associated data — so
+  /// losing a row does not merely lose metadata, it makes the blob
+  /// permanently undecryptable.
   static Future<void> _upgrade(Database db, int from, int to) async {
-    // No migrations yet — schema version 1 is the first release.
-    //
-    // When one is needed, add an explicit `if (from < n)` block per step
-    // so upgrades compose across skipped versions. Never drop or recreate
-    // the documents table: the blobs on disk are keyed by rows in it, and
-    // losing a row orphans a document that is then undecryptable, since
-    // its id is the AES-GCM associated data.
-    throw UnimplementedError(
-      'No schema migration is defined from version $from to $to.',
-    );
+    if (from < 2) {
+      // Phase 4 added the viewer, which needs to know a document's type
+      // without decrypting it. Existing rows predate the column and
+      // their type is genuinely unknown, so they get the generic value
+      // and the viewer offers them as a download rather than guessing.
+      await db.execute(
+        'ALTER TABLE $documentsTable ADD COLUMN mime_type TEXT NOT NULL '
+        "DEFAULT 'application/octet-stream'",
+      );
+    }
   }
 }

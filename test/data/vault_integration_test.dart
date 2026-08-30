@@ -139,6 +139,7 @@ void main() {
         bytes: plaintext,
         title: 'Passport',
         category: DocumentCategory.identity,
+        mimeType: 'application/pdf',
         tags: const ['travel'],
       );
 
@@ -172,6 +173,7 @@ void main() {
         bytes: Uint8List.fromList(utf8.encode(secretText)),
         title: 'Contract',
         category: DocumentCategory.contract,
+        mimeType: 'application/pdf',
       );
 
       // Dump every value from every row and assert the content is absent.
@@ -186,11 +188,13 @@ void main() {
         bytes: _pdfBytes(512, seed: 1),
         title: 'A',
         category: DocumentCategory.tax,
+        mimeType: 'application/pdf',
       );
       final b = await vault.addDocument(
         bytes: _pdfBytes(512, seed: 2),
         title: 'B',
         category: DocumentCategory.tax,
+        mimeType: 'application/pdf',
       );
 
       expect(a.id, isNot(b.id));
@@ -207,6 +211,7 @@ void main() {
         bytes: original,
         title: 'Scanned contract',
         category: DocumentCategory.contract,
+        mimeType: 'application/pdf',
       );
 
       expect(await vault.openDocument(document.id), original);
@@ -219,6 +224,7 @@ void main() {
         bytes: original,
         title: 'Big scan',
         category: DocumentCategory.medical,
+        mimeType: 'application/pdf',
       );
 
       expect(await vault.openDocument(document.id), original);
@@ -236,6 +242,7 @@ void main() {
         bytes: _pdfBytes(128),
         title: 'Doomed',
         category: DocumentCategory.other,
+        mimeType: 'application/pdf',
       );
       await fileStorage.delete(document.blobFileName);
 
@@ -250,6 +257,7 @@ void main() {
         bytes: _pdfBytes(1024),
         title: 'Target',
         category: DocumentCategory.insurance,
+        mimeType: 'application/pdf',
       );
 
       final file = File('${vaultDir.path}/${document.blobFileName}');
@@ -268,11 +276,13 @@ void main() {
         bytes: _pdfBytes(256, seed: 1),
         title: 'A',
         category: DocumentCategory.tax,
+        mimeType: 'application/pdf',
       );
       final b = await vault.addDocument(
         bytes: _pdfBytes(256, seed: 2),
         title: 'B',
         category: DocumentCategory.tax,
+        mimeType: 'application/pdf',
       );
 
       // An attacker with write access swaps the two blob files.
@@ -300,11 +310,13 @@ void main() {
         bytes: _pdfBytes(64),
         title: 'One',
         category: DocumentCategory.identity,
+        mimeType: 'application/pdf',
       );
       await vault.addDocument(
         bytes: _pdfBytes(64),
         title: 'Two',
         category: DocumentCategory.tax,
+        mimeType: 'application/pdf',
       );
 
       final all = await vault.listDocuments();
@@ -320,6 +332,7 @@ void main() {
           bytes: _pdfBytes(128),
           title: 'Original title',
           category: DocumentCategory.other,
+          mimeType: 'application/pdf',
         );
         final original = await vault.openDocument(document.id);
 
@@ -340,6 +353,7 @@ void main() {
         bytes: _pdfBytes(32),
         title: 'Real',
         category: DocumentCategory.other,
+        mimeType: 'application/pdf',
       );
       await vault.deleteDocument(document.id);
 
@@ -354,6 +368,7 @@ void main() {
         bytes: _pdfBytes(128),
         title: 'Temporary',
         category: DocumentCategory.other,
+        mimeType: 'application/pdf',
       );
 
       await vault.deleteDocument(document.id);
@@ -373,6 +388,7 @@ void main() {
           bytes: _pdfBytes(64),
           title: 'Nope',
           category: DocumentCategory.other,
+          mimeType: 'application/pdf',
         ),
         throwsA(isA<VaultLockedException>()),
       );
@@ -383,6 +399,7 @@ void main() {
         bytes: _pdfBytes(128),
         title: 'Locked away',
         category: DocumentCategory.identity,
+        mimeType: 'application/pdf',
       );
 
       keyManager.lock();
@@ -399,6 +416,7 @@ void main() {
         bytes: original,
         title: 'Persistent',
         category: DocumentCategory.identity,
+        mimeType: 'application/pdf',
       );
 
       keyManager.lock();
@@ -413,6 +431,7 @@ void main() {
         bytes: original,
         title: 'Persistent',
         category: DocumentCategory.identity,
+        mimeType: 'application/pdf',
       );
 
       keyManager.lock();
@@ -429,6 +448,7 @@ void main() {
         bytes: _pdfBytes(512),
         title: 'Doomed',
         category: DocumentCategory.other,
+        mimeType: 'application/pdf',
       );
       final blobFile = File('${vaultDir.path}/${document.blobFileName}');
       expect(blobFile.existsSync(), isTrue);

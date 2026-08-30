@@ -97,6 +97,7 @@ class DocumentDao {
     'version': document.version,
     'blob_file_name': document.blobFileName,
     'plaintext_size_bytes': document.plaintextSizeBytes,
+    'mime_type': document.mimeType,
   };
 
   Document _fromRow(Map<String, Object?> row) {
@@ -121,6 +122,9 @@ class DocumentDao {
       version: row['version']! as int,
       blobFileName: row['blob_file_name']! as String,
       plaintextSizeBytes: row['plaintext_size_bytes']! as int,
+      // Rows written before the column existed carry the default; treat
+      // a missing value the same way rather than throwing.
+      mimeType: row['mime_type'] as String? ?? 'application/octet-stream',
     );
   }
 

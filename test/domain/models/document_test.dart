@@ -23,6 +23,7 @@ Document _document({
     version: version,
     blobFileName: '$id.blob',
     plaintextSizeBytes: 1024,
+    mimeType: 'application/pdf',
   );
 }
 
