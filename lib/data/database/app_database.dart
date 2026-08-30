@@ -25,9 +25,17 @@ class AppDatabase {
 
   /// Current schema version. Bump and add an [_upgrade] branch when the
   /// schema changes.
-  static const int schemaVersion = 2;
+  static const int schemaVersion = 3;
 
   static const String documentsTable = 'documents';
+
+  /// Key/value store for user preferences.
+  ///
+  /// Lives in the encrypted database rather than plain preferences
+  /// storage. Settings here are not secret in themselves, but reminder
+  /// offsets describe how a person uses the vault, and there is no reason
+  /// to leak that when an encrypted table costs nothing.
+  static const String settingsTable = 'settings';
 
   final DatabaseOpener _opener;
 
@@ -92,6 +100,13 @@ class AppDatabase {
       )
     ''');
 
+    await db.execute('''
+      CREATE TABLE $settingsTable (
+        key TEXT PRIMARY KEY NOT NULL,
+        value TEXT NOT NULL
+      )
+    ''');
+
     // Categories drive the main list grouping, and expiry drives the
     // reminder scan — both are read far more often than written.
     await db.execute(
@@ -123,6 +138,17 @@ class AppDatabase {
         'ALTER TABLE $documentsTable ADD COLUMN mime_type TEXT NOT NULL '
         "DEFAULT 'application/octet-stream'",
       );
+    }
+
+    if (from < 3) {
+      // Phase 6 added reminder preferences. Created here as well as in
+      // _create so a vault upgraded from v1 or v2 gets the table too.
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS $settingsTable (
+          key TEXT PRIMARY KEY NOT NULL,
+          value TEXT NOT NULL
+        )
+      ''');
     }
   }
 }

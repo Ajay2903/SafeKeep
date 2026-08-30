@@ -8,11 +8,14 @@ import 'package:safekeep/core/constants/app_motion.dart';
 import 'package:safekeep/core/constants/app_shape.dart';
 import 'package:safekeep/core/constants/app_spacing.dart';
 import 'package:safekeep/core/theme/app_colors.dart';
+import 'package:safekeep/data/database/settings_dao.dart';
 import 'package:safekeep/data/mime_types.dart';
+import 'package:safekeep/data/reminders/reminder_scheduler.dart';
 import 'package:safekeep/data/scanning/document_scanner.dart';
 import 'package:safekeep/domain/models/document.dart';
 import 'package:safekeep/domain/repositories/document_repository.dart';
 import 'package:safekeep/presentation/app/vault_session_cubit.dart';
+import 'package:safekeep/presentation/settings/reminder_settings_screen.dart';
 import 'package:safekeep/presentation/vault/document_detail_screen.dart';
 import 'package:safekeep/presentation/vault/document_form_screen.dart';
 import 'package:safekeep/presentation/vault/document_list_cubit.dart';
@@ -27,11 +30,15 @@ class VaultHomeScreen extends StatelessWidget {
   const VaultHomeScreen({
     required this.repository,
     required this.scanner,
+    required this.settingsDao,
+    required this.reminders,
     super.key,
   });
 
   final DocumentRepository repository;
   final DocumentScanner scanner;
+  final SettingsDao settingsDao;
+  final ReminderScheduler reminders;
 
   @override
   Widget build(BuildContext context) {
@@ -41,16 +48,28 @@ class VaultHomeScreen extends StatelessWidget {
         unawaited(cubit.load());
         return cubit;
       },
-      child: _VaultHomeView(repository: repository, scanner: scanner),
+      child: _VaultHomeView(
+        repository: repository,
+        scanner: scanner,
+        settingsDao: settingsDao,
+        reminders: reminders,
+      ),
     );
   }
 }
 
 class _VaultHomeView extends StatefulWidget {
-  const _VaultHomeView({required this.repository, required this.scanner});
+  const _VaultHomeView({
+    required this.repository,
+    required this.scanner,
+    required this.settingsDao,
+    required this.reminders,
+  });
 
   final DocumentRepository repository;
   final DocumentScanner scanner;
+  final SettingsDao settingsDao;
+  final ReminderScheduler reminders;
 
   @override
   State<_VaultHomeView> createState() => _VaultHomeViewState();
@@ -213,6 +232,18 @@ class _VaultHomeViewState extends State<_VaultHomeView> {
       appBar: AppBar(
         title: const Text('Vault'),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.notifications_outlined),
+            tooltip: 'Reminder settings',
+            onPressed: () => Navigator.of(context).push<void>(
+              MaterialPageRoute(
+                builder: (_) => ReminderSettingsScreen(
+                  settingsDao: widget.settingsDao,
+                  reminders: widget.reminders,
+                ),
+              ),
+            ),
+          ),
           IconButton(
             icon: const Icon(Icons.lock_outline),
             tooltip: 'Lock vault',

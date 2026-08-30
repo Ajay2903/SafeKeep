@@ -3,7 +3,9 @@ import 'dart:typed_data';
 import 'package:safekeep/core/logging/app_logger.dart';
 import 'package:safekeep/data/data_exceptions.dart';
 import 'package:safekeep/data/database/document_dao.dart';
+import 'package:safekeep/data/database/settings_dao.dart';
 import 'package:safekeep/data/document_id.dart';
+import 'package:safekeep/data/reminders/reminder_scheduler.dart';
 import 'package:safekeep/data/storage/document_file_storage.dart';
 import 'package:safekeep/domain/models/document.dart';
 import 'package:safekeep/domain/models/document_category.dart';
@@ -26,14 +28,18 @@ class VaultDocumentRepository implements DocumentRepository {
     required EncryptionService encryption,
     required DocumentFileStorage fileStorage,
     required DocumentDao dao,
+    required SettingsDao settingsDao,
     DateTime Function() clock = DateTime.now,
-  }) : this._(encryption, fileStorage, dao, clock);
+    ReminderScheduler reminders = const NoopReminderScheduler(),
+  }) : this._(encryption, fileStorage, dao, settingsDao, clock, reminders);
 
   VaultDocumentRepository._(
     this._encryption,
     this._fileStorage,
     this._dao,
+    this._settingsDao,
     this._clock,
+    this._reminders,
   );
 
   /// Identifier of the vault's single document-encryption key.
@@ -47,7 +53,9 @@ class VaultDocumentRepository implements DocumentRepository {
   final EncryptionService _encryption;
   final DocumentFileStorage _fileStorage;
   final DocumentDao _dao;
+  final SettingsDao _settingsDao;
   final DateTime Function() _clock;
+  final ReminderScheduler _reminders;
 
   @override
   Future<Document> addDocument({
@@ -100,6 +108,8 @@ class VaultDocumentRepository implements DocumentRepository {
       rethrow;
     }
 
+    await _syncReminders(document);
+
     AppLogger.instance.info('Document added: $id');
     return document;
   }
@@ -119,6 +129,24 @@ class VaultDocumentRepository implements DocumentRepository {
       blob,
       keyId: encryptionKeyId,
       documentId: id,
+    );
+  }
+
+  /// Brings a document's reminders in line with its expiry date.
+  ///
+  /// Lives in the repository rather than at the call sites so scheduling
+  /// cannot be forgotten by whichever screen happens to save a document
+  /// — the same reasoning that puts version bumping here.
+  Future<void> _syncReminders(Document document) async {
+    final expiresAt = document.expiresAt;
+    if (expiresAt == null) {
+      await _reminders.cancelFor(document.id);
+      return;
+    }
+    await _reminders.scheduleFor(
+      documentId: document.id,
+      expiresAt: expiresAt,
+      settings: await _settingsDao.readReminderSettings(),
     );
   }
 
@@ -142,6 +170,10 @@ class VaultDocumentRepository implements DocumentRepository {
       throw DocumentNotFoundException('No document with id "${document.id}".');
     }
 
+    // An edited expiry date must replace the old reminders, not add to
+    // them; scheduleFor cancels before scheduling for exactly this.
+    await _syncReminders(updated);
+
     AppLogger.instance.info('Document updated: ${document.id}');
     return updated;
   }
@@ -159,6 +191,9 @@ class VaultDocumentRepository implements DocumentRepository {
     // the reverse order would leave a listed document that cannot open.
     await _dao.deleteById(id);
     await _fileStorage.delete(document.blobFileName);
+    // Otherwise a notification would fire for a document that no longer
+    // exists, which is both useless and a small disclosure.
+    await _reminders.cancelFor(id);
 
     AppLogger.instance.info('Document deleted: $id');
   }

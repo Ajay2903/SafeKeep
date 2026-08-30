@@ -8,6 +8,7 @@ import 'package:safekeep/data/data_exceptions.dart';
 import 'package:safekeep/data/database/app_database.dart';
 import 'package:safekeep/data/database/database_opener.dart';
 import 'package:safekeep/data/database/document_dao.dart';
+import 'package:safekeep/data/database/settings_dao.dart';
 import 'package:safekeep/data/storage/document_file_storage.dart';
 import 'package:safekeep/data/vault_document_repository.dart';
 import 'package:safekeep/domain/models/document_category.dart';
@@ -126,6 +127,7 @@ void main() {
       encryption: AesGcmEncryptionService(keySource: keyManager),
       fileStorage: fileStorage,
       dao: dao,
+      settingsDao: SettingsDao(database: database),
     );
   });
 

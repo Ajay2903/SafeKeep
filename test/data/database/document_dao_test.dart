@@ -5,8 +5,10 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:safekeep/data/database/app_database.dart';
 import 'package:safekeep/data/database/database_opener.dart';
 import 'package:safekeep/data/database/document_dao.dart';
+import 'package:safekeep/data/database/settings_dao.dart';
 import 'package:safekeep/domain/models/document.dart';
 import 'package:safekeep/domain/models/document_category.dart';
+import 'package:safekeep/domain/models/reminder_settings.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 /// Opens a real in-memory SQLite database.
@@ -343,8 +345,91 @@ void main() {
       },
     );
 
-    test('the current schema version is 2', () {
-      expect(AppDatabase.schemaVersion, 2);
+    test('the current schema version is 3', () {
+      expect(AppDatabase.schemaVersion, 3);
+    });
+
+    test('a v1 database also gains the settings table', () async {
+      // Two migration steps must both apply when a version is skipped.
+      final dir = Directory.systemTemp.createTempSync('safekeep_migrate2');
+      final path = '${dir.path}/vault.db';
+
+      final v1 = await databaseFactoryFfi.openDatabase(
+        path,
+        options: OpenDatabaseOptions(
+          version: 1,
+          onCreate: (db, version) async {
+            await db.execute('''
+              CREATE TABLE ${AppDatabase.documentsTable} (
+                id TEXT PRIMARY KEY NOT NULL,
+                title TEXT NOT NULL,
+                category TEXT NOT NULL,
+                tags TEXT NOT NULL,
+                notes TEXT,
+                expires_at INTEGER,
+                created_at INTEGER NOT NULL,
+                modified_at INTEGER NOT NULL,
+                version INTEGER NOT NULL,
+                blob_file_name TEXT NOT NULL,
+                plaintext_size_bytes INTEGER NOT NULL
+              )
+            ''');
+          },
+        ),
+      );
+      await v1.close();
+
+      final upgraded = AppDatabase(opener: _FileOpener(path));
+      await upgraded.open(Uint8List(32));
+
+      final settings = SettingsDao(database: upgraded);
+      // Readable means the table exists; defaults mean nothing was set.
+      expect(
+        await settings.readReminderSettings(),
+        ReminderSettings.defaults,
+      );
+
+      await upgraded.close();
+      dir.deleteSync(recursive: true);
+    });
+
+    test('reminder settings round-trip through the settings table', () async {
+      final settings = SettingsDao(database: database);
+      const chosen = ReminderSettings(offsetsInDays: {90, 7});
+
+      await settings.writeReminderSettings(chosen);
+
+      expect(await settings.readReminderSettings(), chosen);
+    });
+
+    test('writing settings twice replaces rather than duplicates', () async {
+      final settings = SettingsDao(database: database);
+
+      await settings.writeReminderSettings(
+        const ReminderSettings(offsetsInDays: {30}),
+      );
+      await settings.writeReminderSettings(
+        const ReminderSettings(offsetsInDays: {7}),
+      );
+
+      expect(
+        await settings.readReminderSettings(),
+        const ReminderSettings(offsetsInDays: {7}),
+      );
+    });
+
+    test('turning every reminder off is honoured, not reset', () async {
+      final settings = SettingsDao(database: database);
+
+      await settings.writeReminderSettings(
+        const ReminderSettings(offsetsInDays: {}),
+      );
+
+      // An empty set must not silently fall back to the defaults.
+      expect(
+        (await settings.readReminderSettings()).isEmpty,
+        isTrue,
+      );
     });
   });
 

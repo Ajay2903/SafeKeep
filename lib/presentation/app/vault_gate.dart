@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:safekeep/core/constants/app_motion.dart';
 import 'package:safekeep/core/constants/app_spacing.dart';
+import 'package:safekeep/data/database/settings_dao.dart';
+import 'package:safekeep/data/reminders/reminder_scheduler.dart';
 import 'package:safekeep/data/scanning/document_scanner.dart';
 import 'package:safekeep/domain/repositories/document_repository.dart';
 import 'package:safekeep/presentation/app/vault_session_cubit.dart';
@@ -35,6 +37,8 @@ class VaultGate extends StatefulWidget {
   const VaultGate({
     required this.repository,
     required this.scanner,
+    required this.settingsDao,
+    required this.reminders,
     super.key,
   });
 
@@ -45,6 +49,9 @@ class VaultGate extends StatefulWidget {
   /// Behind an interface so a poor-quality scanner package can be
   /// swapped without touching any of this.
   final DocumentScanner scanner;
+
+  final SettingsDao settingsDao;
+  final ReminderScheduler reminders;
 
   @override
   State<VaultGate> createState() => _VaultGateState();
@@ -130,6 +137,8 @@ class _VaultGateState extends State<VaultGate> with WidgetsBindingObserver {
       VaultUnlocked() => VaultHomeScreen(
         repository: widget.repository,
         scanner: widget.scanner,
+        settingsDao: widget.settingsDao,
+        reminders: widget.reminders,
       ),
     };
   }

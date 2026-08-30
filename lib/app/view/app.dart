@@ -7,6 +7,9 @@ import 'package:safekeep/core/theme/app_theme.dart';
 import 'package:safekeep/data/database/app_database.dart';
 import 'package:safekeep/data/database/database_opener.dart';
 import 'package:safekeep/data/database/document_dao.dart';
+import 'package:safekeep/data/database/settings_dao.dart';
+import 'package:safekeep/data/reminders/local_notification_reminder_scheduler.dart';
+import 'package:safekeep/data/reminders/reminder_scheduler.dart';
 import 'package:safekeep/data/scanning/cunning_document_scanner_adapter.dart';
 import 'package:safekeep/data/scanning/document_scanner.dart';
 import 'package:safekeep/data/storage/document_file_storage.dart';
@@ -37,6 +40,7 @@ class App extends StatelessWidget {
     this.database,
     this.repository,
     this.scanner,
+    this.reminders,
     super.key,
   });
 
@@ -59,6 +63,7 @@ class App extends StatelessWidget {
   final AppDatabase? database;
   final DocumentRepository? repository;
   final DocumentScanner? scanner;
+  final ReminderScheduler? reminders;
 
   @override
   Widget build(BuildContext context) {
@@ -75,6 +80,9 @@ class App extends StatelessWidget {
           opener: SqlCipherDatabaseOpener(path: databasePath),
         );
 
+    final settingsDao = SettingsDao(database: db);
+    final reminderScheduler = reminders ?? LocalNotificationReminderScheduler();
+
     final vault =
         repository ??
         VaultDocumentRepository(
@@ -83,6 +91,8 @@ class App extends StatelessWidget {
             directory: blobDirectory,
           ),
           dao: DocumentDao(database: db),
+          settingsDao: settingsDao,
+          reminders: reminderScheduler,
         );
 
     // The provider sits ABOVE MaterialApp, not inside `home:`.
@@ -110,6 +120,8 @@ class App extends StatelessWidget {
         home: VaultGate(
           repository: vault,
           scanner: scanner ?? const CunningDocumentScannerAdapter(),
+          settingsDao: settingsDao,
+          reminders: reminderScheduler,
         ),
       ),
     );
