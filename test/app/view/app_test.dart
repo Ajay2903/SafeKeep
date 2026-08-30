@@ -81,6 +81,10 @@ class _InMemoryOpener implements DatabaseOpener {
         version: version,
         onCreate: onCreate,
         onUpgrade: onUpgrade,
+        // Without this, sqflite caches by path and every test asking for
+        // ':memory:' shares one database — including one a previous test
+        // already closed. Tests then pass or fail depending on order.
+        singleInstance: false,
       ),
     );
   }

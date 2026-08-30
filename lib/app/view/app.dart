@@ -81,19 +81,29 @@ class App extends StatelessWidget {
           dao: DocumentDao(database: db),
         );
 
-    return MaterialApp(
-      title: config.appName,
-      theme: AppTheme.light,
-      darkTheme: AppTheme.dark,
-      localizationsDelegates: AppLocalizations.localizationsDelegates,
-      supportedLocales: AppLocalizations.supportedLocales,
-      home: BlocProvider(
-        create: (_) => VaultSessionCubit(
-          keyManager: keys,
-          biometricGate: gate,
-          database: db,
-        ),
-        child: VaultGate(repository: vault),
+    // The provider sits ABOVE MaterialApp, not inside `home:`.
+    //
+    // MaterialApp builds the Navigator, so a provider placed in `home:`
+    // ends up *below* it: pushed routes are siblings of the home route,
+    // not descendants of it, and cannot see the provider at all. Any
+    // pushed screen reading the session cubit — the document viewer, for
+    // one — then throws ProviderNotFoundException the moment it opens.
+    //
+    // Hoisting it above MaterialApp puts the Navigator and every route
+    // it builds inside the provider's subtree.
+    return BlocProvider(
+      create: (_) => VaultSessionCubit(
+        keyManager: keys,
+        biometricGate: gate,
+        database: db,
+      ),
+      child: MaterialApp(
+        title: config.appName,
+        theme: AppTheme.light,
+        darkTheme: AppTheme.dark,
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
+        home: VaultGate(repository: vault),
       ),
     );
   }
