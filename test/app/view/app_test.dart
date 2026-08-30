@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
@@ -88,6 +89,16 @@ class _InMemoryOpener implements DatabaseOpener {
 void main() {
   setUpAll(sqfliteFfiInit);
 
+  late Directory blobDir;
+
+  setUp(() {
+    blobDir = Directory.systemTemp.createTempSync('safekeep_app_test');
+  });
+
+  tearDown(() {
+    if (blobDir.existsSync()) blobDir.deleteSync(recursive: true);
+  });
+
   Widget buildApp({required bool vaultExists}) {
     return App(
       config: const AppConfig(
@@ -95,6 +106,7 @@ void main() {
         appName: 'Safekeep Test',
       ),
       databasePath: inMemoryDatabasePath,
+      blobDirectory: blobDir,
       keyManager: _FakeKeyManager(initialized: vaultExists),
       biometricGate: _FakeBiometricGate(),
       database: AppDatabase(opener: _InMemoryOpener()),

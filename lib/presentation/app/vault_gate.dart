@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:safekeep/core/constants/app_motion.dart';
 import 'package:safekeep/core/constants/app_spacing.dart';
+import 'package:safekeep/domain/repositories/document_repository.dart';
 import 'package:safekeep/presentation/app/vault_session_cubit.dart';
 import 'package:safekeep/presentation/app/vault_session_state.dart';
 import 'package:safekeep/presentation/onboarding/onboarding_flow.dart';
@@ -30,7 +31,11 @@ import 'package:safekeep/presentation/widgets/vault_mark.dart';
 /// Both are captured here, at the root, so no screen has to remember to
 /// participate.
 class VaultGate extends StatefulWidget {
-  const VaultGate({super.key});
+  const VaultGate({required this.repository, super.key});
+
+  /// The vault, handed to the unlocked screens. Constructed above this
+  /// widget so the whole tree can be built with fakes in a test.
+  final DocumentRepository repository;
 
   @override
   State<VaultGate> createState() => _VaultGateState();
@@ -113,7 +118,7 @@ class _VaultGateState extends State<VaultGate> with WidgetsBindingObserver {
         detail: 'Checking your passphrase.',
       ),
       final VaultLocked locked => UnlockScreen(state: locked),
-      VaultUnlocked() => const VaultHomeScreen(),
+      VaultUnlocked() => VaultHomeScreen(repository: widget.repository),
     };
   }
 }
