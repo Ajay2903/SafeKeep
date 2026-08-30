@@ -8,7 +8,7 @@ import your passport, licence, insurance and tax documents; they are
 encrypted on-device and never leave it in readable form. No server, no
 accounts, no telemetry.
 
-> ### 🚧 Status: in active development — Phases 0-4 of 10 complete
+> ### 🚧 Status: in active development — Phases 0-6 of 10 complete
 >
 > **The app is usable end to end.** Set up a vault, unlock it with your
 > fingerprint, import a PDF or photo, and it is encrypted before it
@@ -37,7 +37,10 @@ encrypted with a key only the user holds.
    lives in an encrypted SQLCipher database.
 3. Day to day the vault opens with a fingerprint. The passphrase is only
    needed when setting up a new device.
-4. Optional backup writes **encrypted blobs** to the user's own Google
+4. Documents with an expiry date schedule on-device reminders. The
+   notification never names the document — it says only that something
+   is expiring, so nothing is readable from a locked screen.
+5. Optional backup writes **encrypted blobs** to the user's own Google
    Drive. Even holding those blobs, they are useless without the
    passphrase.
 
@@ -149,9 +152,9 @@ rejected rather than silently accepted.
 | **2** | Encrypted blob storage + SQLCipher metadata database | ✅ Complete |
 | **3** | Onboarding, lock/unlock screens, auto-lock | ✅ Complete |
 | **4** | Vault UI — document list, viewer, categories, search | ✅ Complete |
-| **5** | Document scanner | ⏳ Next |
-| 6 | Expiry reminders via local notifications | Planned |
-| 7 | Google Drive backup & multi-device sync | Planned |
+| **5** | Document scanner | ✅ Complete |
+| **6** | Expiry reminders via local notifications | ✅ Complete |
+| **7** | Google Drive backup & multi-device sync | ⏳ Next |
 | 8 | Audit log, transparency screen, export | Planned |
 | 9 | Free/paid tiers, in-app purchase | Planned |
 | 10 | Hardening, store submission | Planned |
@@ -179,18 +182,22 @@ rejected rather than silently accepted.
 - Import PDFs and photos, browse, search by title and tag, filter by
   category, view, edit and delete
 - In-memory PDF and image viewing — decrypted bytes never touch disk
+- Camera scanning with automatic edge detection; multi-page scans become
+  one PDF
+- On-device expiry reminders whose notification text never names the
+  document
 - An on-device benchmark and a debug harness for verifying the platform
   integrations that unit tests cannot reach
 
-**Immediately next:** Phase 5 — document scanning, feeding captured pages
-into the same encrypt-and-store path that import already uses.
+**Immediately next:** Phase 7 — optional backup of encrypted blobs to the
+user's own Google Drive, and multi-device sync.
 
 ### Tests
 
-**249 tests**, `flutter analyze` clean under
+**285 tests**, `flutter analyze` clean under
 [very_good_analysis][very_good_analysis_link].
 
-Line coverage is **94%** for `lib/security` and **56%** overall across
+Line coverage is **94%** for `lib/security` and **58%** overall across
 code reachable from unit tests. The gap between those two numbers is the honest state of things: testing
 effort is concentrated on the security and data layers, where a bug is
 silent and unrecoverable, while the UI added in Phases 3 and 4 is covered
