@@ -179,6 +179,27 @@ class VaultDocumentRepository implements DocumentRepository {
   }
 
   @override
+  Future<void> deleteAllDocuments() async {
+    final documents = await _dao.findAll();
+
+    // Blobs first, then rows. If this is interrupted, what remains is
+    // rows pointing at missing files rather than files nothing points
+    // at — and a row with no blob is at least visible and removable,
+    // whereas an orphaned blob is invisible.
+    for (final document in documents) {
+      await _fileStorage.delete(document.blobFileName);
+      await _reminders.cancelFor(document.id);
+    }
+    for (final document in documents) {
+      await _dao.deleteById(document.id);
+    }
+
+    AppLogger.instance.warning(
+      'All documents deleted: ${documents.length} removed',
+    );
+  }
+
+  @override
   Future<void> deleteDocument(String id) async {
     final document = await _dao.findById(id);
     if (document == null) {

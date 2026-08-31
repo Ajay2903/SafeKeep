@@ -3,6 +3,8 @@ import 'dart:async';
 import 'package:bloc/bloc.dart';
 import 'package:safekeep/core/logging/app_logger.dart';
 import 'package:safekeep/data/database/app_database.dart';
+import 'package:safekeep/data/reminders/reminder_scheduler.dart';
+import 'package:safekeep/domain/repositories/document_repository.dart';
 import 'package:safekeep/presentation/app/vault_session_state.dart';
 import 'package:safekeep/security/auth/biometric_gate.dart';
 import 'package:safekeep/security/key_management/auto_lock_controller.dart';
@@ -34,12 +36,16 @@ class VaultSessionCubit extends Cubit<VaultSessionState> {
     required KeyManager keyManager,
     required BiometricGate biometricGate,
     required AppDatabase database,
+    required DocumentRepository repository,
+    required ReminderScheduler reminders,
     Duration? backgroundGracePeriod,
     Duration? inactivityTimeout,
   }) : this._(
          keyManager,
          biometricGate,
          database,
+         repository,
+         reminders,
          backgroundGracePeriod ??
              AutoLockController.defaultBackgroundGracePeriod,
          inactivityTimeout ?? AutoLockController.defaultInactivityTimeout,
@@ -49,6 +55,8 @@ class VaultSessionCubit extends Cubit<VaultSessionState> {
     this._keyManager,
     this._biometricGate,
     this._database,
+    this._repository,
+    this._reminders,
     Duration backgroundGracePeriod,
     Duration inactivityTimeout,
   ) : super(const VaultChecking()) {
@@ -63,6 +71,8 @@ class VaultSessionCubit extends Cubit<VaultSessionState> {
   final KeyManager _keyManager;
   final BiometricGate _biometricGate;
   final AppDatabase _database;
+  final DocumentRepository _repository;
+  final ReminderScheduler _reminders;
 
   late final AutoLockController _autoLock;
 
@@ -177,6 +187,38 @@ class VaultSessionCubit extends Cubit<VaultSessionState> {
     );
 
     AppLogger.instance.info('Vault locked');
+  }
+
+  /// Erases everything: every document, every reminder, and the vault
+  /// key itself.
+  ///
+  /// Requires [passphrase] and verifies it here rather than trusting the
+  /// caller. Biometrics are deliberately *not* sufficient: a phone handed
+  /// over unlocked, or an attacker who has the owner's finger, should not
+  /// be able to destroy a vault. Knowing the passphrase is the one thing
+  /// that distinguishes the owner.
+  ///
+  /// Returns false if the passphrase is wrong, having changed nothing.
+  ///
+  /// Order matters. Documents go first, so an interruption leaves a vault
+  /// that still opens with fewer documents in it rather than a vault
+  /// whose key is gone but whose files remain — the latter is
+  /// indistinguishable from corruption and would leave the user unable to
+  /// clean up what is left.
+  Future<bool> deleteEverything(String passphrase) async {
+    if (!await _keyManager.verifyPassphrase(passphrase)) {
+      AppLogger.instance.info('Erase rejected: passphrase incorrect');
+      return false;
+    }
+
+    await _repository.deleteAllDocuments();
+    await _reminders.cancelAll();
+    await _database.close();
+    await _keyManager.deleteVault();
+
+    AppLogger.instance.warning('Vault erased at user request');
+    if (!isClosed) emit(const VaultUninitialized());
+    return true;
   }
 
   // ------------------------------------------------------- lifecycle in

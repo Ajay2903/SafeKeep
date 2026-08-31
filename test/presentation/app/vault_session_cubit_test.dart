@@ -4,6 +4,11 @@ import 'package:bloc_test/bloc_test.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:safekeep/data/database/app_database.dart';
 import 'package:safekeep/data/database/database_opener.dart';
+import 'package:safekeep/data/reminders/reminder_scheduler.dart';
+import 'package:safekeep/domain/models/document.dart';
+import 'package:safekeep/domain/models/document_category.dart';
+import 'package:safekeep/domain/models/reminder_settings.dart';
+import 'package:safekeep/domain/repositories/document_repository.dart';
 import 'package:safekeep/presentation/app/vault_session_cubit.dart';
 import 'package:safekeep/presentation/app/vault_session_state.dart';
 import 'package:safekeep/security/auth/biometric_gate.dart';
@@ -64,8 +69,11 @@ class _FakeKeyManager implements KeyManager {
   @override
   Future<Uint8List> databaseKey() async => Uint8List(32);
 
+  int deleteVaultCalls = 0;
+
   @override
   Future<void> deleteVault() async {
+    deleteVaultCalls++;
     initialized = false;
     unlocked = false;
   }
@@ -97,6 +105,63 @@ class _FakeBiometricGate implements BiometricGate {
   }
 }
 
+/// Records the erase path without touching real storage.
+class _FakeRepository implements DocumentRepository {
+  int deleteAllCalls = 0;
+
+  @override
+  Future<void> deleteAllDocuments() async => deleteAllCalls++;
+
+  @override
+  Future<List<Document>> listDocuments() async => [];
+
+  @override
+  Future<Document?> getDocument(String id) async => null;
+
+  @override
+  Future<Uint8List> openDocument(String id) async => Uint8List(0);
+
+  @override
+  Future<void> deleteDocument(String id) async {}
+
+  @override
+  Future<Document> updateDocument(Document document) async => document;
+
+  @override
+  Future<Document> addDocument({
+    required Uint8List bytes,
+    required String title,
+    required DocumentCategory category,
+    required String mimeType,
+    List<String> tags = const [],
+    String? notes,
+    DateTime? expiresAt,
+  }) async => throw UnimplementedError();
+}
+
+class _FakeReminders implements ReminderScheduler {
+  int cancelAllCalls = 0;
+
+  @override
+  Future<bool> hasPermission() async => true;
+
+  @override
+  Future<bool> requestPermission() async => true;
+
+  @override
+  Future<void> scheduleFor({
+    required String documentId,
+    required DateTime expiresAt,
+    required ReminderSettings settings,
+  }) async {}
+
+  @override
+  Future<void> cancelFor(String documentId) async {}
+
+  @override
+  Future<void> cancelAll() async => cancelAllCalls++;
+}
+
 class _InMemoryOpener implements DatabaseOpener {
   @override
   Future<Database> open({
@@ -125,11 +190,15 @@ void main() {
 
   late _FakeKeyManager keyManager;
   late _FakeBiometricGate gate;
+  late _FakeRepository repository;
+  late _FakeReminders reminders;
   late AppDatabase database;
 
   setUp(() {
     keyManager = _FakeKeyManager();
     gate = _FakeBiometricGate();
+    repository = _FakeRepository();
+    reminders = _FakeReminders();
     database = AppDatabase(opener: _InMemoryOpener());
   });
 
@@ -137,6 +206,8 @@ void main() {
     keyManager: keyManager,
     biometricGate: gate,
     database: database,
+    repository: repository,
+    reminders: reminders,
   );
 
   group('checkStatus', () {
@@ -342,6 +413,77 @@ void main() {
     );
   });
 
+  group('deleteEverything', () {
+    blocTest<VaultSessionCubit, VaultSessionState>(
+      'erases documents, reminders, and the vault',
+      build: build,
+      setUp: () => keyManager
+        ..initialized = true
+        ..passphraseCorrect = true,
+      act: (cubit) async {
+        await cubit.checkStatus();
+        await cubit.deleteEverything('correct');
+      },
+      verify: (cubit) {
+        expect(repository.deleteAllCalls, 1);
+        expect(reminders.cancelAllCalls, 1);
+        expect(keyManager.deleteVaultCalls, 1);
+        // Back to onboarding: there is no vault left to unlock.
+        expect(cubit.state, isA<VaultUninitialized>());
+      },
+    );
+
+    blocTest<VaultSessionCubit, VaultSessionState>(
+      'a wrong passphrase changes nothing at all',
+      build: build,
+      setUp: () => keyManager
+        ..initialized = true
+        ..passphraseCorrect = false,
+      act: (cubit) async {
+        await cubit.checkStatus();
+        await cubit.deleteEverything('wrong');
+      },
+      verify: (cubit) {
+        // Nothing is touched — not the documents, not the reminders, not
+        // the key. An erase that half-ran on a wrong passphrase would be
+        // the worst possible outcome.
+        expect(repository.deleteAllCalls, 0);
+        expect(reminders.cancelAllCalls, 0);
+        expect(keyManager.deleteVaultCalls, 0);
+        expect(cubit.state, isA<VaultLocked>());
+      },
+    );
+
+    test('reports whether it erased', () async {
+      keyManager
+        ..initialized = true
+        ..passphraseCorrect = false;
+      final cubit = build();
+
+      expect(await cubit.deleteEverything('wrong'), isFalse);
+
+      keyManager.passphraseCorrect = true;
+      expect(await cubit.deleteEverything('right'), isTrue);
+      await cubit.close();
+    });
+
+    test('closes the metadata database', () async {
+      keyManager
+        ..initialized = true
+        ..passphraseCorrect = true;
+      final cubit = build();
+      await cubit.createVault('passphrase');
+      expect(database.isOpen, isTrue);
+
+      await cubit.deleteEverything('passphrase');
+
+      // Leaving it open would keep decrypted pages in SQLCipher's cache
+      // after the key they belong to has been destroyed.
+      expect(database.isOpen, isFalse);
+      await cubit.close();
+    });
+  });
+
   group('lock', () {
     blocTest<VaultSessionCubit, VaultSessionState>(
       'clears keys, closes the database, and returns to locked',
@@ -397,6 +539,8 @@ void main() {
         keyManager: keyManager,
         biometricGate: gate,
         database: database,
+        repository: repository,
+        reminders: reminders,
         backgroundGracePeriod: const Duration(milliseconds: 40),
       );
       await cubit.createVault('passphrase');
@@ -415,6 +559,8 @@ void main() {
         keyManager: keyManager,
         biometricGate: gate,
         database: database,
+        repository: repository,
+        reminders: reminders,
         backgroundGracePeriod: const Duration(milliseconds: 200),
       );
       await cubit.createVault('passphrase');
@@ -433,6 +579,8 @@ void main() {
         keyManager: keyManager,
         biometricGate: gate,
         database: database,
+        repository: repository,
+        reminders: reminders,
         inactivityTimeout: const Duration(milliseconds: 40),
       );
       await cubit.createVault('passphrase');
@@ -448,6 +596,8 @@ void main() {
         keyManager: keyManager,
         biometricGate: gate,
         database: database,
+        repository: repository,
+        reminders: reminders,
         inactivityTimeout: const Duration(milliseconds: 100),
       );
       await cubit.createVault('passphrase');

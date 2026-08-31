@@ -15,7 +15,7 @@ import 'package:safekeep/data/scanning/document_scanner.dart';
 import 'package:safekeep/domain/models/document.dart';
 import 'package:safekeep/domain/repositories/document_repository.dart';
 import 'package:safekeep/presentation/app/vault_session_cubit.dart';
-import 'package:safekeep/presentation/settings/reminder_settings_screen.dart';
+import 'package:safekeep/presentation/settings/settings_screen.dart';
 import 'package:safekeep/presentation/vault/document_detail_screen.dart';
 import 'package:safekeep/presentation/vault/document_form_screen.dart';
 import 'package:safekeep/presentation/vault/document_list_cubit.dart';
@@ -233,11 +233,11 @@ class _VaultHomeViewState extends State<_VaultHomeView> {
         title: const Text('Vault'),
         actions: [
           IconButton(
-            icon: const Icon(Icons.notifications_outlined),
-            tooltip: 'Reminder settings',
+            icon: const Icon(Icons.settings_outlined),
+            tooltip: 'Settings',
             onPressed: () => Navigator.of(context).push<void>(
               MaterialPageRoute(
-                builder: (_) => ReminderSettingsScreen(
+                builder: (_) => SettingsScreen(
                   settingsDao: widget.settingsDao,
                   reminders: widget.reminders,
                 ),

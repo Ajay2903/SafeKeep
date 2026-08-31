@@ -110,6 +110,8 @@ class App extends StatelessWidget {
         keyManager: keys,
         biometricGate: gate,
         database: db,
+        repository: vault,
+        reminders: reminderScheduler,
       ),
       child: MaterialApp(
         title: config.appName,

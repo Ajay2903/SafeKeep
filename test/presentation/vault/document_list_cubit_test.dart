@@ -43,6 +43,9 @@ class _FakeRepository implements DocumentRepository {
   }
 
   @override
+  Future<void> deleteAllDocuments() async {}
+
+  @override
   Future<void> deleteDocument(String id) async {
     if (throwOnDelete) {
       throw const DocumentNotFoundException('nope');

@@ -160,6 +160,9 @@ class _RecordingRepository implements DocumentRepository {
   Future<Uint8List> openDocument(String id) async => Uint8List(0);
 
   @override
+  Future<void> deleteAllDocuments() async {}
+
+  @override
   Future<void> deleteDocument(String id) async {}
 
   @override

@@ -45,6 +45,15 @@ abstract interface class DocumentRepository {
   /// `modifiedAt`. The blob is untouched.
   Future<Document> updateDocument(Document document);
 
+  /// Removes every document: all metadata rows, all blobs, and every
+  /// scheduled reminder.
+  ///
+  /// Used by "delete all data". Deleting the vault key alone would make
+  /// the blobs undecryptable, but they would still occupy storage and
+  /// still be visible as files — a user who asks to erase everything
+  /// means the files too.
+  Future<void> deleteAllDocuments();
+
   /// Removes the metadata record and deletes the encrypted blob.
   ///
   /// Succeeds even if the blob is already missing, so a partially failed

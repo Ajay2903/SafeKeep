@@ -141,6 +141,9 @@ class _OneDocumentRepository implements DocumentRepository {
   Future<Uint8List> openDocument(String id) async => pngBytes;
 
   @override
+  Future<void> deleteAllDocuments() async {}
+
+  @override
   Future<void> deleteDocument(String id) async {}
 
   @override
