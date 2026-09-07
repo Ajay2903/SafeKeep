@@ -11,7 +11,7 @@ dependencies:
   bloc: ^9.2.1
   cryptography: 2.9.0
   cunning_document_scanner: 3.0.1
-  file_picker: 12.1.2
+  file_picker: 12.2.0
   flutter:
     sdk: flutter
   flutter_bloc: ^9.1.1
