@@ -23,7 +23,7 @@ dependencies:
   local_auth: 3.0.2
   meta: 1.19.0
   path_provider: 2.1.6
-  pdfrx: 2.5.0
+  pdfrx: 2.6.1
   sqflite_sqlcipher: 3.4.1
   timezone: 0.11.1
   url_launcher: 6.3.2
